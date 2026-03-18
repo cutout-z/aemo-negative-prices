@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AEMO Negative Prices — NEM Daylight Hours</title>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<style>
+  :root { --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a; --text: #e0e0e0; --muted: #888; --accent: #4472C4; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
+  h1 { font-size: 1.5rem; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 20px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab { padding: 8px 18px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: 6px 6px 0 0; cursor: pointer; font-size: 0.9rem; transition: all 0.15s; }
+  .tab:hover { color: var(--text); border-color: var(--accent); }
+  .tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+  th { background: var(--accent); color: #fff; padding: 10px 12px; text-align: center; position: sticky; top: 0; white-space: nowrap; }
+  th:first-child { text-align: left; }
+  td { padding: 7px 12px; text-align: center; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td:first-child { text-align: left; font-weight: 500; }
+  tr:hover td { background: rgba(68,114,196,0.08); }
+  .downloads { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .dl-btn { display: inline-block; padding: 8px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--accent); text-decoration: none; font-size: 0.85rem; transition: all 0.15s; }
+  .dl-btn:hover { background: var(--accent); color: #fff; }
+  .footer { margin-top: 24px; color: var(--muted); font-size: 0.78rem; }
+  .loading { text-align: center; padding: 40px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>AEMO Negative Prices</h1>
+<p class="subtitle">Percentage of daylight 5-min intervals (8am–4pm AEST) with negative dispatch prices — NEM regions, May 2019 to present</p>
+
+<div class="tabs" id="tabs"></div>
+<div class="table-wrap"><div class="loading" id="loading">Loading data…</div><table id="table" style="display:none"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+
+<div class="downloads" id="downloads"></div>
+<div class="footer" id="footer"></div>
+
+<script>
+const REGIONS = {NSW1:'NSW',QLD1:'QLD',VIC1:'VIC',SA1:'SA',TAS1:'TAS'};
+const THRESHOLDS = ['0','neg10','neg20','neg30','neg40','neg50','neg60','neg70','neg80'];
+const TH_LABELS = ['< $0','< -$10','< -$20','< -$30','< -$40','< -$50','< -$60','< -$70','< -$80'];
+const EXCEL_FILES = {NSW1:'NSW_negative_prices.xlsx',QLD1:'QLD_negative_prices.xlsx',VIC1:'VIC_negative_prices.xlsx',SA1:'SA_negative_prices.xlsx',TAS1:'TAS_negative_prices.xlsx'};
+
+let allData = [];
+let activeRegion = 'SA1';
+
+function formatMonth(ym) {
+  const [y, m] = ym.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[parseInt(m)-1] + ' ' + y;
+}
+
+function heatColor(pct) {
+  // 0% = green (#63BE7B), 50% = yellow (#FFEB84), 100% = red (#F8696B)
+  const p = Math.min(pct / 100, 1);
+  let r, g, b;
+  if (p <= 0.5) {
+    const t = p / 0.5;
+    r = Math.round(99 + (255 - 99) * t);
+    g = Math.round(190 + (235 - 190) * t);
+    b = Math.round(123 + (132 - 123) * t);
+  } else {
+    const t = (p - 0.5) / 0.5;
+    r = Math.round(255 + (248 - 255) * t);
+    g = Math.round(235 + (105 - 235) * t);
+    b = Math.round(132 + (107 - 132) * t);
+  }
+  return `rgb(${r},${g},${b})`;
+}
+
+function textColor(pct) {
+  return pct > 15 ? '#1a1a1a' : '#e0e0e0';
+}
+
+function renderTabs() {
+  const container = document.getElementById('tabs');
+  container.innerHTML = '';
+  for (const [id, name] of Object.entries(REGIONS)) {
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (id === activeRegion ? ' active' : '');
+    btn.textContent = name;
+    btn.onclick = () => { activeRegion = id; renderTabs(); renderTable(); };
+    container.appendChild(btn);
+  }
+}
+
+function renderTable() {
+  const thead = document.getElementById('thead');
+  const tbody = document.getElementById('tbody');
+  thead.innerHTML = '<tr><th>Month</th>' + TH_LABELS.map(l => `<th>${l}</th>`).join('') + '</tr>';
+
+  const rows = allData.filter(r => r.REGIONID === activeRegion).sort((a, b) => a.YEAR_MONTH.localeCompare(b.YEAR_MONTH));
+  tbody.innerHTML = rows.map(row => {
+    const cells = THRESHOLDS.map(t => {
+      const val = parseFloat(row[`pct_below_${t}`]) || 0;
+      const bg = heatColor(val);
+      const fg = textColor(val);
+      return `<td style="background:${bg};color:${fg}">${val.toFixed(2)}%</td>`;
+    }).join('');
+    return `<tr><td>${formatMonth(row.YEAR_MONTH)}</td>${cells}</tr>`;
+  }).join('');
+
+  document.getElementById('table').style.display = '';
+  document.getElementById('loading').style.display = 'none';
+}
+
+function renderDownloads() {
+  const container = document.getElementById('downloads');
+  const repoBase = 'https://github.com/cutout-z/aemo-negative-prices/raw/main/outputs/';
+  container.innerHTML = '<strong style="width:100%;margin-bottom:4px">Download Excel:&nbsp;</strong>' +
+    Object.entries(REGIONS).map(([id, name]) =>
+      `<a class="dl-btn" href="${repoBase}${EXCEL_FILES[id]}" download>${name}</a>`
+    ).join('');
+}
+
+Papa.parse('outputs/summary.csv', {
+  download: true,
+  header: true,
+  skipEmptyLines: true,
+  complete: function(results) {
+    allData = results.data;
+    // Find latest month for footer
+    const months = [...new Set(allData.map(r => r.YEAR_MONTH))].sort();
+    const latest = months[months.length - 1];
+    document.getElementById('footer').textContent = `Data through ${formatMonth(latest)} · Updates monthly on the 16th · Source: AEMO DISPATCHPRICE via NEMOSIS`;
+    renderTabs();
+    renderTable();
+    renderDownloads();
+  },
+  error: function() {
+    document.getElementById('loading').textContent = 'Failed to load data. Check that outputs/summary.csv exists.';
+  }
+});
+</script>
+</body>
+</html>
