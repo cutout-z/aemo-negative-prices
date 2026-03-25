@@ -2,6 +2,7 @@
 data/*.csv
 data/*.zip
 data/*.feather
+data/cache_*/
 !data/.gitkeep
 
 # Python
