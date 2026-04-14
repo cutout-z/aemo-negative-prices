@@ -129,6 +129,20 @@ A GitHub Actions workflow runs automatically on the **16th of each month at 00:0
 
 No manual intervention required. A full historical refresh can be triggered manually via the GitHub Actions UI if needed.
 
+### Output Validation
+
+After the pipeline runs and before committing, an automated validation step (`tests/validate_outputs.py`) checks:
+
+- `summary.csv` exists and is non-empty
+- All 5 NEM regions are present
+- Daylight interval counts are within expected range (2,500–3,200 per region-month)
+- All percentages are in [0, 100]
+- Threshold ordering is preserved (count at $0 >= count at -$10 >= ... >= count at -$80)
+- No duplicate region/month rows
+- All 5 regional Excel workbooks exist
+
+If any check fails, the workflow exits before committing — preventing bad data from reaching the dashboard.
+
 ---
 
 ## Key Observations (as of early 2026)
