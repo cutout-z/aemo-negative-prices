@@ -49,6 +49,31 @@ def generate_all_workbooks(summary: pd.DataFrame, output_dir: str):
         _write_region_workbook(region_data, friendly_name, filepath)
         logger.info(f"Written {filepath}")
 
+    generate_all_states_workbook(summary, output_dir)
+
+
+def generate_all_states_workbook(summary: pd.DataFrame, output_dir: str):
+    """Generate a single workbook with all regions as separate sheets (Percentages view)."""
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    filepath = output_path / "All_States_negative_prices.xlsx"
+
+    wb = Workbook()
+
+    for region in config.REGIONS:
+        region_data = summary[summary["REGIONID"] == region].copy()
+        if region_data.empty:
+            continue
+        region_data = region_data.sort_values("YEAR_MONTH").reset_index(drop=True)
+        friendly_name = config.REGION_NAMES[region]
+        _write_pct_sheet(wb, region_data, friendly_name, sheet_title=friendly_name)
+
+    if "Sheet" in wb.sheetnames:
+        del wb["Sheet"]
+
+    wb.save(filepath)
+    logger.info(f"Written {filepath}")
+
 
 def _write_region_workbook(data: pd.DataFrame, region_name: str, filepath: Path):
     """Write a 3-sheet workbook for a single region."""
@@ -76,9 +101,9 @@ def _format_month_label(year_month: str) -> str:
     return dt.strftime("%b %Y")
 
 
-def _write_pct_sheet(wb: Workbook, data: pd.DataFrame, region_name: str):
+def _write_pct_sheet(wb: Workbook, data: pd.DataFrame, region_name: str, sheet_title: str = "Percentages"):
     """Sheet 1: Clean percentage table."""
-    ws = wb.create_sheet(title="Percentages")
+    ws = wb.create_sheet(title=sheet_title)
 
     # Header row
     headers = ["Month"] + THRESHOLD_HEADERS
