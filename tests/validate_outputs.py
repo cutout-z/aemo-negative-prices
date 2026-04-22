@@ -75,6 +75,10 @@ def validate():
         xlsx_path = OUTPUTS_DIR / f"{name}_negative_prices.xlsx"
         check(xlsx_path.exists(), f"{xlsx_path.name} does not exist")
 
+    # --- All-states workbook exists ---
+    all_states_path = OUTPUTS_DIR / "All_States_negative_prices.xlsx"
+    check(all_states_path.exists(), "All_States_negative_prices.xlsx does not exist")
+
     # --- No duplicate region/month combinations ---
     if "REGIONID" in df.columns and "YEAR_MONTH" in df.columns:
         dupes = df.duplicated(subset=["REGIONID", "YEAR_MONTH"], keep=False)
