@@ -1,0 +1,13 @@
+[Unit]
+Description=Run monthly AEMO Negative Prices refresh
+Documentation=https://github.com/cutout-z/aemo-negative-prices
+
+[Timer]
+# 00:35 UTC on the 16th = 08:35 Australia/Perth.
+OnCalendar=*-*-16 00:35:00
+RandomizedDelaySec=20m
+Persistent=true
+Unit=aemo-negative-prices.service
+
+[Install]
+WantedBy=timers.target
