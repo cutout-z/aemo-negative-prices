@@ -51,7 +51,7 @@ def get_latest_available_month() -> tuple[int, int] | None:
     return None
 
 
-def download_month(year: int, month: int, cache_dir: str) -> pd.DataFrame:
+def download_month(year: int, month: int, cache_dir: str, *, force: bool = False) -> pd.DataFrame:
     """Download DISPATCHPRICE data for a single month via NEMOSIS.
 
     Returns filtered DataFrame with columns [SETTLEMENTDATE, REGIONID, RRP].
@@ -66,7 +66,8 @@ def download_month(year: int, month: int, cache_dir: str) -> pd.DataFrame:
     start_str = start.strftime("%Y/%m/%d %H:%M:%S")
     end_str = end.strftime("%Y/%m/%d %H:%M:%S")
 
-    logger.info(f"Downloading {year}-{month:02d} via NEMOSIS...")
+    action = "Re-downloading" if force else "Downloading"
+    logger.info(f"{action} {year}-{month:02d} via NEMOSIS...")
 
     for attempt in range(config.MAX_RETRIES):
         try:
@@ -77,6 +78,7 @@ def download_month(year: int, month: int, cache_dir: str) -> pd.DataFrame:
                 raw_data_location=cache_dir,
                 fformat="feather",
                 keep_csv=False,
+                rebuild=force,
             )
             break
         except Exception as e:

@@ -1,9 +1,8 @@
 name: Monthly AEMO Negative Price Update
 
 on:
-  schedule:
-    # 16th of each month at midnight UTC (~10am AEST)
-    - cron: '0 0 16 * *'
+  # Scheduled production updates run on the Hetzner VPS via systemd.
+  # Keep this workflow as a manual verification/fallback runner.
   workflow_dispatch:
     inputs:
       full_refresh:
