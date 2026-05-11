@@ -1,8 +1,8 @@
-# VPS Monthly Updates
+# VPS Data Monitoring
 
 Production model:
 
-- Hetzner VPS runs the monthly negative-price refresh and keeps only a bounded recent NEMOSIS raw cache.
+- Hetzner VPS checks daily for updated monthly negative-price data and keeps only a bounded recent NEMOSIS raw cache.
 - GitHub stores code and publishable `outputs/`.
 - GitHub Pages deploys after the VPS pushes updated outputs.
 - GitHub Actions remains available for manual verification, but should not be the primary scheduled data runner.
@@ -11,7 +11,7 @@ Production model:
 
 | Lane | Timer | Pipeline args | Purpose |
 | --- | --- | --- | --- |
-| Monthly negative prices | `aemo-negative-prices.timer` | `--months-back 2` | Reprocess the recent complete-month overlap window, preserve settled history, and regenerate outputs/workbooks. |
+| Negative price data monitor | `aemo-negative-prices.timer` | `--months-back 2` | Check daily for newly published or corrected DISPATCHPRICE archives, reprocess the recent complete-month overlap window, preserve settled history, and publish only when canonical summary data changes. |
 
 Recommended layout:
 
