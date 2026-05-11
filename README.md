@@ -35,7 +35,7 @@ All data is sourced from **AEMO's public wholesale electricity market archive** 
 | **Intervention filtering** | Rows where `INTERVENTION != 0` (AEMO intervention repricing events) are excluded — only normal market outcomes are counted |
 | **Regions** | NSW1, QLD1, VIC1, SA1, TAS1 (all five NEM mainland + Tasmania regions) |
 | **History** | May 2019 to present |
-| **Update frequency** | Monthly — automated on the 16th of each month |
+| **Update frequency** | Daily monitor on Hetzner VPS; publishes when new/corrected monthly data changes `outputs/summary.csv` |
 
 ---
 
@@ -99,7 +99,7 @@ Open **[cutout-z.github.io/aemo-negative-prices](https://cutout-z.github.io/aemo
 - The table is a colour-coded heatmap — green cells = low negative frequency, red = high
 - **Download Excel** links at the bottom for offline analysis
 
-The dashboard auto-updates after each monthly data refresh.
+The dashboard auto-updates after each published data refresh.
 
 ### Excel Files (direct download)
 
@@ -119,15 +119,16 @@ For programmatic access or custom analysis, use [`outputs/summary.csv`](outputs/
 
 ## Update Schedule
 
-A GitHub Actions workflow runs automatically on the **16th of each month at 00:00 UTC (~10:00 AEST)**. It:
+Production updates are monitored by the Hetzner VPS systemd lane documented in [`deploy/README.md`](deploy/README.md). The `aemo-negative-prices.timer` checks daily for newly published or corrected monthly `DISPATCHPRICE` archives. It:
 
 1. Probes AEMO for the latest published month
-2. Downloads only new data (incremental — no re-downloading of historical months)
+2. Reprocesses the recent complete-month overlap window
 3. Re-generates all Excel workbooks and the summary CSV
-4. Commits the updated outputs to the repo
-5. Redeploys the GitHub Pages dashboard
+4. Verifies settled historical months did not change unexpectedly
+5. Commits and pushes only when canonical `outputs/summary.csv` changes
+6. Redeploys the GitHub Pages dashboard
 
-No manual intervention required. A full historical refresh can be triggered manually via the GitHub Actions UI if needed.
+No manual intervention required. GitHub Actions is kept as a manual verification/fallback runner; a full historical refresh can still be triggered manually via the GitHub Actions UI if needed.
 
 ### Output Validation
 
@@ -141,7 +142,7 @@ After the pipeline runs and before committing, an automated validation step (`te
 - No duplicate region/month rows
 - All 5 regional Excel workbooks exist
 
-If any check fails, the workflow exits before committing — preventing bad data from reaching the dashboard.
+If any check fails, the VPS runner or manual fallback workflow exits before committing — preventing bad data from reaching the dashboard.
 
 ---
 
