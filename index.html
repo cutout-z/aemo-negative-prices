@@ -46,7 +46,7 @@
 
   <section class="card mt-4 overflow-hidden" aria-labelledby="heat-title">
     <div class="card-head flex-wrap">
-      <div>
+      <div class="min-w-0 flex-1 basis-80">
         <h2 id="heat-title" class="card-title">Share of daylight intervals below each price</h2>
         <p class="card-sub">% of each month's daylight 5-min intervals (8am–4pm AEST) with a regional price below the column's threshold, $/MWh · latest month at the bottom</p>
         <div class="mt-2.5 flex flex-wrap gap-1.5" id="badges"></div>
@@ -82,10 +82,10 @@
   </section>
 
   <footer class="mt-6 flex flex-wrap items-center justify-between gap-3 text-[12px] leading-4 text-faint">
-    <span>Static page · figures computed in your browser from <a class="underline decoration-line-strong underline-offset-2 hover:text-ink" href="outputs/summary.csv">outputs/summary.csv</a></span>
+    <span>Static page · figures computed in your browser from <a class="underline decoration-line-strong underline-offset-2 hover:text-ink max-sm:-my-2.5 max-sm:inline-block max-sm:py-2.5" href="outputs/summary.csv">outputs/summary.csv</a></span>
     <div class="seg" role="group" aria-label="Theme">
-      <button type="button" class="seg-item" data-theme-set="dark">Dark</button>
-      <button type="button" class="seg-item" data-theme-set="light">Light</button>
+      <button type="button" class="seg-item max-sm:h-8 max-sm:px-3" data-theme-set="dark">Dark</button>
+      <button type="button" class="seg-item max-sm:h-8 max-sm:px-3" data-theme-set="light">Light</button>
     </div>
   </footer>
 
@@ -228,7 +228,7 @@ function renderTabs() {
     btn.type = 'button';
     btn.setAttribute('role', 'tab');
     btn.setAttribute('aria-selected', id === activeRegion ? 'true' : 'false');
-    btn.className = 'seg-item' + (id === activeRegion ? ' seg-item-active' : '');
+    btn.className = 'seg-item max-sm:h-8 max-sm:px-3' + (id === activeRegion ? ' seg-item-active' : '');
     btn.textContent = name;
     btn.onclick = () => { activeRegion = id; renderTabs(); renderDownloads(); if (allData.length) { renderKpis(); renderTable(); } };
     container.appendChild(btn);
@@ -238,7 +238,7 @@ function renderTabs() {
 function renderTable() {
   const thead = document.getElementById('thead');
   const tbody = document.getElementById('tbody');
-  thead.innerHTML = '<tr><th class="th sticky left-0 z-20" scope="col">Month</th>' +
+  thead.innerHTML = '<tr><th class="th sticky left-0 z-20 border-r" scope="col">Month</th>' +
     TH_LABELS.map(l => `<th class="th text-right" scope="col">${l}</th>`).join('') + '</tr>';
 
   const rows = allData.filter(r => r.REGIONID === activeRegion).sort((a, b) => a.YEAR_MONTH.localeCompare(b.YEAR_MONTH));
@@ -255,7 +255,7 @@ function renderTable() {
       if (isNaN(val)) return '<td class="td-num whitespace-nowrap text-faint">N/A</td>';
       return `<td class="td-num seq-${heatStep(val)} whitespace-nowrap border-l border-l-surface border-b-surface">${val.toFixed(2)}%</td>`;
     }).join('');
-    return `<tr class="group"><th class="td sticky left-0 z-[1] whitespace-nowrap bg-surface text-left font-medium text-ink group-hover:bg-surface-2" scope="row">${formatMonth(row.YEAR_MONTH)}</th>${cells}</tr>`;
+    return `<tr class="group"><th class="td sticky left-0 z-[1] whitespace-nowrap border-r border-r-line bg-surface text-left font-medium text-ink group-hover:bg-surface-2" scope="row">${formatMonth(row.YEAR_MONTH)}</th>${cells}</tr>`;
   }).join('');
 
   tableState('');
