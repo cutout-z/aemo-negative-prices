@@ -39,6 +39,7 @@
       <div>
         <h2 id="heat-title" class="card-title">Share of daylight intervals below each price</h2>
         <p class="card-sub">% of each month's daylight 5-min intervals (8am–4pm AEST) with a regional price below the column's threshold, $/MWh · latest month at the bottom</p>
+        <div class="mt-2.5 flex flex-wrap gap-1.5" id="badges"></div>
       </div>
       <div class="seg" id="tabs" role="tablist" aria-label="Region"></div>
     </div>
@@ -64,7 +65,7 @@
     <div class="card-head">
       <div>
         <h2 id="dl-title" class="card-title">Download the workbooks</h2>
-        <p class="card-sub">Excel · one workbook per region, plus All States</p>
+        <p class="card-sub" id="dl-sub">Excel · one workbook per region, plus All States</p>
       </div>
     </div>
     <div class="card-body"><div class="flex flex-wrap items-center gap-2" id="downloads"></div></div>
@@ -180,7 +181,7 @@ function renderTabs() {
     btn.setAttribute('aria-selected', id === activeRegion ? 'true' : 'false');
     btn.className = 'seg-item' + (id === activeRegion ? ' seg-item-active' : '');
     btn.textContent = name;
-    btn.onclick = () => { activeRegion = id; renderTabs(); renderKpis(); renderTable(); };
+    btn.onclick = () => { activeRegion = id; renderTabs(); renderKpis(); renderTable(); renderDownloads(); };
     container.appendChild(btn);
   }
 }
@@ -192,6 +193,7 @@ function renderTable() {
     TH_LABELS.map(l => `<th class="th text-right" scope="col">${l}</th>`).join('') + '</tr>';
 
   const rows = allData.filter(r => r.REGIONID === activeRegion).sort((a, b) => a.YEAR_MONTH.localeCompare(b.YEAR_MONTH));
+  renderBadges(rows);
   tbody.innerHTML = rows.map(row => {
     const cells = THRESHOLDS.map(t => {
       const val = parseFloat(row[`pct_below_${t}`]);
@@ -208,16 +210,33 @@ function renderTable() {
   wrap.scrollTop = wrap.scrollHeight;
 }
 
+// Counts the page already knows, for the active region: rows (months) and their span.
+function renderBadges(rows) {
+  const box = document.getElementById('badges');
+  if (!rows.length) { box.innerHTML = ''; return; }
+  box.innerHTML =
+    `<span class="badge num">${rows.length} months</span>` +
+    `<span class="badge num">${formatMonth(rows[0].YEAR_MONTH)} – ${formatMonth(rows[rows.length - 1].YEAR_MONTH)}</span>` +
+    `<span class="badge num">${THRESHOLDS.length} thresholds</span>`;
+}
+
+// The six workbooks: the active region's first (primary), then All States, then the other four.
 function renderDownloads() {
   const container = document.getElementById('downloads');
   const repoBase = 'https://github.com/cutout-z/aemo-negative-prices/raw/main/outputs/';
-  const icon = '<svg class="size-3.5 text-faint" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/></svg>';
+  const icon = '<svg class="size-3.5 opacity-70" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/></svg>';
+  const name = REGIONS[activeRegion];
+  document.getElementById('dl-sub').textContent =
+    `Excel · the ${name} workbook (three sheets), All States (a percentages sheet per region), or another region`;
+  const others = Object.entries(REGIONS).filter(([id]) => id !== activeRegion);
   container.innerHTML =
-    Object.entries(REGIONS).map(([id, name]) =>
-      `<a class="btn" href="${repoBase}${EXCEL_FILES[id]}" download>${icon}${name}</a>`
-    ).join('') +
-    '<span class="mx-1 h-5 w-px bg-line" aria-hidden="true"></span>' +
-    `<a class="btn" href="${repoBase}All_States_negative_prices.xlsx" download>${icon}All States</a>`;
+    `<a class="btn btn-primary" href="${repoBase}${EXCEL_FILES[activeRegion]}" download>${icon}${name} workbook</a>` +
+    `<a class="btn" href="${repoBase}All_States_negative_prices.xlsx" download>${icon}All States</a>` +
+    '<span class="mx-1 hidden h-5 w-px bg-line sm:inline-block" aria-hidden="true"></span>' +
+    '<span class="eyebrow ml-1 mr-0.5 w-full sm:ml-0 sm:w-auto">Other regions</span>' +
+    others.map(([id, n]) =>
+      `<a class="btn btn-ghost" href="${repoBase}${EXCEL_FILES[id]}" download>${icon}${n}</a>`
+    ).join('');
 }
 
 Papa.parse('outputs/summary.csv', {
