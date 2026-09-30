@@ -31,7 +31,22 @@
     <p class="mt-1.5 max-w-[72ch] text-[13px] leading-5 text-muted">Percentage of daylight 5-min intervals (8am–4pm AEST) with negative dispatch prices — NEM regions, May 2019 to present</p>
   </header>
 
-  <section class="card mt-6 overflow-hidden" aria-labelledby="heat-title">
+  <section class="card mt-6 overflow-hidden" aria-labelledby="kpi-title">
+    <div class="card-head">
+      <div>
+        <h2 id="kpi-title" class="card-title">At a glance</h2>
+        <p class="card-sub" id="kpi-sub">Share of daylight intervals priced below $0, for the region selected in the table</p>
+      </div>
+    </div>
+    <div class="mt-4 grid grid-cols-2 gap-px border-t border-line-soft bg-line-soft lg:grid-cols-4" id="kpis" aria-live="polite">
+      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div></div>
+      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div></div>
+      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div></div>
+      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div></div>
+    </div>
+  </section>
+
+  <section class="card mt-4 overflow-hidden" aria-labelledby="heat-title">
     <div class="card-head flex-wrap">
       <div>
         <h2 id="heat-title" class="card-title">Share of daylight intervals below each price</h2>
@@ -94,6 +109,76 @@ function textColor(pct) {
   return pct > 15 ? '#1a1a1a' : '#e0e0e0';
 }
 
+// KPI row: every value is read from outputs/summary.csv for the active region; each names its month.
+function shiftYear(ym, years) {
+  const [y, m] = ym.split('-');
+  return (parseInt(y) + years) + '-' + m;
+}
+
+function pct(v) { return parseFloat(v).toFixed(2) + '%'; }
+
+function kpiTile(value, label, note) {
+  return `<div class="bg-surface px-5 py-4"><div class="kpi-value">${value}</div>` +
+    `<div class="kpi-label">${label}</div>` +
+    `<div class="mt-2 text-[12px] leading-4 text-faint num">${note}</div></div>`;
+}
+
+function renderKpis() {
+  const name = REGIONS[activeRegion];
+  const rows = allData.filter(r => r.REGIONID === activeRegion).sort((a, b) => a.YEAR_MONTH.localeCompare(b.YEAR_MONTH));
+  document.getElementById('kpi-title').textContent = `${name} at a glance`;
+  const box = document.getElementById('kpis');
+  if (!rows.length) { box.innerHTML = ''; return; }
+
+  const last = rows[rows.length - 1];
+  const month = last.YEAR_MONTH;
+  document.getElementById('kpi-sub').textContent =
+    `Share of daylight 5-min intervals priced below $0 · latest month in the data, ${formatMonth(month)}`;
+
+  // 1. latest month, below $0
+  const now = parseFloat(last.pct_below_0);
+  const t1 = kpiTile(pct(now), `Below $0 · ${formatMonth(month)}`,
+    `${Number(last.count_below_0).toLocaleString('en-AU')} of ${Number(last.total_daylight_intervals).toLocaleString('en-AU')} daylight intervals`);
+
+  // 2. the same month a year earlier, and the change to now
+  const prevMonth = shiftYear(month, -1);
+  const prev = rows.find(r => r.YEAR_MONTH === prevMonth);
+  let t2;
+  if (prev) {
+    const then = parseFloat(prev.pct_below_0);
+    const d = now - then;
+    const word = Math.abs(d) < 0.005 ? 'unchanged' : (d > 0 ? 'up ' : 'down ') + Math.abs(d).toFixed(2) + ' pts';
+    t2 = kpiTile(pct(then), `Below $0 · ${formatMonth(prevMonth)}`, `${formatMonth(month)} is ${word}`);
+  } else {
+    t2 = kpiTile('N/A', `Below $0 · ${formatMonth(prevMonth)}`, 'no row for this month in the data');
+  }
+
+  // 3. the deepest threshold this region has ever crossed, and when
+  let deep = -1;
+  THRESHOLDS.forEach((t, i) => { if (rows.some(r => parseInt(r[`count_below_${t}`]) > 0)) deep = i; });
+  let t3;
+  if (deep >= 0) {
+    const t = THRESHOLDS[deep];
+    const hits = rows.filter(r => parseInt(r[`count_below_${t}`]) > 0);
+    t3 = kpiTile(TH_LABELS[deep].replace('-', '−'), 'Deepest threshold crossed',
+      `last in ${formatMonth(hits[hits.length - 1].YEAR_MONTH)} · ${hits.length} of ${rows.length} months`);
+  } else {
+    t3 = kpiTile('None', 'Deepest threshold crossed', `no interval below $0 in ${rows.length} months`);
+  }
+
+  // 4. rank of the five regions on the latest month's share below $0 (1 = most negative pricing)
+  const peers = allData.filter(r => r.YEAR_MONTH === month);
+  const higher = peers.filter(r => parseFloat(r.pct_below_0) > now).length;
+  const tied = peers.filter(r => r.REGIONID !== activeRegion && parseFloat(r.pct_below_0) === now).length;
+  const top = peers.reduce((a, b) => parseFloat(b.pct_below_0) > parseFloat(a.pct_below_0) ? b : a);
+  const note = top.REGIONID === activeRegion
+    ? `highest of the ${peers.length} in ${formatMonth(month)}`
+    : `highest: ${REGIONS[top.REGIONID]} at ${pct(top.pct_below_0)}`;
+  const t4 = kpiTile(`${tied ? '=' : ''}${higher + 1} of ${peers.length}`, `Rank below $0 · ${formatMonth(month)}`, note);
+
+  box.innerHTML = t1 + t2 + t3 + t4;
+}
+
 function renderTabs() {
   const container = document.getElementById('tabs');
   container.innerHTML = '';
@@ -104,7 +189,7 @@ function renderTabs() {
     btn.setAttribute('aria-selected', id === activeRegion ? 'true' : 'false');
     btn.className = 'seg-item' + (id === activeRegion ? ' seg-item-active' : '');
     btn.textContent = name;
-    btn.onclick = () => { activeRegion = id; renderTabs(); renderTable(); };
+    btn.onclick = () => { activeRegion = id; renderTabs(); renderKpis(); renderTable(); };
     container.appendChild(btn);
   }
 }
@@ -152,6 +237,7 @@ Papa.parse('outputs/summary.csv', {
     const latest = months[months.length - 1];
     document.getElementById('footer').textContent = `Data through ${formatMonth(latest)} · Updates monthly on the 16th · Source: AEMO DISPATCHPRICE via NEMOSIS`;
     renderTabs();
+    renderKpis();
     renderTable();
     renderDownloads();
   },
