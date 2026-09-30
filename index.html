@@ -57,8 +57,8 @@
       </ol>
       <span class="text-[12px] leading-4 text-faint">→ more of the month's daylight below the price · each range includes its lower bound</span>
     </div>
-    <div class="table-wrap mt-4 max-h-[min(72vh,760px)] overflow-auto border-t border-line-soft"><div class="px-5 py-10 text-center text-[13px] text-muted" id="loading">Loading data…</div><table id="table" class="w-full border-separate border-spacing-0" style="display:none"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
-    <div class="card-foot" id="footer"></div>
+    <div class="table-wrap mt-4 max-h-[min(72vh,760px)] overflow-auto border-t border-line-soft"><div id="table-state"><div class="space-y-2.5 px-5 py-5" role="status" aria-label="Loading data"><div class="skeleton h-4 w-full"></div><div class="skeleton h-4 w-full"></div><div class="skeleton h-4 w-11/12"></div><div class="skeleton h-4 w-full"></div><div class="skeleton h-4 w-10/12"></div><div class="skeleton h-4 w-full"></div></div></div><table id="table" class="w-full border-separate border-spacing-0" style="display:none"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+    <div class="card-foot" id="footer"><span>Source: AEMO DISPATCHPRICE (RRP, intervention pricing excluded) via NEMOSIS</span><span aria-hidden="true">·</span><span>as of: loading…</span></div>
   </section>
 
   <section class="card mt-4" aria-labelledby="dl-title">
@@ -101,6 +101,33 @@ function heatStep(pct) {
   return i === -1 ? 7 : i + 1;
 }
 
+// States: absence is stated, never faked with a zero.
+const STATE_ICON = '<svg class="state-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 4.75v3.75M8 11h.01"/></svg>';
+function stateHTML(title, body) {
+  return `<div class="state px-5" role="status">${STATE_ICON}<div><p class="state-title">${title}</p><p class="state-body">${body}</p></div></div>`;
+}
+function kpiState(title, body) {
+  document.getElementById('kpis').innerHTML = `<div class="col-span-2 bg-surface lg:col-span-4">${stateHTML(title, body)}</div>`;
+}
+function tableState(html) {
+  const box = document.getElementById('table-state');
+  box.innerHTML = html;
+  box.style.display = html ? '' : 'none';
+  document.getElementById('table').style.display = html ? 'none' : '';
+}
+const CSV_PATH = '<code class="mono text-ink">outputs/summary.csv</code>';
+
+function loadFailed(title, body) {
+  kpiState('No figures to show', 'The data file is not available, so there is nothing to summarise.');
+  tableState(stateHTML(title, body));
+  document.getElementById('tabs').style.display = 'none';
+  document.getElementById('badges').innerHTML = '';
+  document.getElementById('footer').innerHTML =
+    '<span>Source: AEMO DISPATCHPRICE (RRP, intervention pricing excluded) via NEMOSIS</span>' +
+    '<span aria-hidden="true">·</span><span>as of: not known — the data file did not load</span>';
+  renderDownloads();
+}
+
 // KPI row: every value is read from outputs/summary.csv for the active region; each names its month.
 function shiftYear(ym, years) {
   const [y, m] = ym.split('-');
@@ -119,8 +146,12 @@ function renderKpis() {
   const name = REGIONS[activeRegion];
   const rows = allData.filter(r => r.REGIONID === activeRegion).sort((a, b) => a.YEAR_MONTH.localeCompare(b.YEAR_MONTH));
   document.getElementById('kpi-title').textContent = `${name} at a glance`;
+  if (!rows.length) {
+    document.getElementById('kpi-sub').textContent = `No rows for ${activeRegion} in the data file`;
+    kpiState(`No months for ${name}`, `${CSV_PATH} has no rows for ${activeRegion}, so there is nothing to summarise for this region.`);
+    return;
+  }
   const box = document.getElementById('kpis');
-  if (!rows.length) { box.innerHTML = ''; return; }
 
   const last = rows[rows.length - 1];
   const month = last.YEAR_MONTH;
@@ -181,7 +212,7 @@ function renderTabs() {
     btn.setAttribute('aria-selected', id === activeRegion ? 'true' : 'false');
     btn.className = 'seg-item' + (id === activeRegion ? ' seg-item-active' : '');
     btn.textContent = name;
-    btn.onclick = () => { activeRegion = id; renderTabs(); renderKpis(); renderTable(); renderDownloads(); };
+    btn.onclick = () => { activeRegion = id; renderTabs(); renderDownloads(); if (allData.length) { renderKpis(); renderTable(); } };
     container.appendChild(btn);
   }
 }
@@ -194,6 +225,12 @@ function renderTable() {
 
   const rows = allData.filter(r => r.REGIONID === activeRegion).sort((a, b) => a.YEAR_MONTH.localeCompare(b.YEAR_MONTH));
   renderBadges(rows);
+  if (!rows.length) {
+    tbody.innerHTML = '';
+    tableState(stateHTML(`No months for ${REGIONS[activeRegion]}`,
+      `${CSV_PATH} loaded, but it has no rows for ${activeRegion}. The other regions are unaffected; this one fills in when the data update writes its rows.`));
+    return;
+  }
   tbody.innerHTML = rows.map(row => {
     const cells = THRESHOLDS.map(t => {
       const val = parseFloat(row[`pct_below_${t}`]);
@@ -203,8 +240,7 @@ function renderTable() {
     return `<tr class="group"><th class="td sticky left-0 z-[1] whitespace-nowrap bg-surface text-left font-medium text-ink group-hover:bg-surface-2" scope="row">${formatMonth(row.YEAR_MONTH)}</th>${cells}</tr>`;
   }).join('');
 
-  document.getElementById('table').style.display = '';
-  document.getElementById('loading').style.display = 'none';
+  tableState('');
   // Rows run oldest → newest; open on the newest months, under the sticky header.
   const wrap = document.querySelector('.table-wrap');
   wrap.scrollTop = wrap.scrollHeight;
@@ -239,12 +275,21 @@ function renderDownloads() {
     ).join('');
 }
 
+// The region switch and the workbook links do not depend on the CSV: render them before it arrives.
+renderTabs();
+renderDownloads();
+
 Papa.parse('outputs/summary.csv', {
   download: true,
   header: true,
   skipEmptyLines: true,
   complete: function(results) {
-    allData = results.data;
+    allData = results.data.filter(r => r.REGIONID && r.YEAR_MONTH);
+    if (!allData.length) {
+      loadFailed('The data file has no rows',
+        `${CSV_PATH} loaded but holds no region/month rows, so there is nothing to show. It is rewritten by the data update lane; the next successful run restores it.`);
+      return;
+    }
     // Find latest month for footer
     const months = [...new Set(allData.map(r => r.YEAR_MONTH))].sort();
     const latest = months[months.length - 1];
@@ -253,13 +298,15 @@ Papa.parse('outputs/summary.csv', {
       '<span>Source: AEMO DISPATCHPRICE (RRP, intervention pricing excluded) via NEMOSIS</span>' + dot +
       `<span class="text-muted">as of ${formatMonth(latest)}</span>` + dot +
       "<span>Checked daily; a month appears once AEMO publishes that month's archive</span>";
-    renderTabs();
     renderKpis();
     renderTable();
-    renderDownloads();
   },
   error: function() {
-    document.getElementById('loading').textContent = 'Failed to load data. Check that outputs/summary.csv exists.';
+    loadFailed('The data file did not load',
+      `This page reads ${CSV_PATH} from the same site, and that request failed, so no months can be shown. ` +
+      'On the published site the file is committed to main by the data update lane — check it is there. ' +
+      'On a local copy, serve the folder over HTTP (<code class="mono text-ink">python3 -m http.server</code>) instead of opening index.html as a file. ' +
+      'The workbook downloads below link to the repository directly.');
   }
 });
 </script>
