@@ -6,18 +6,6 @@
 <title>AEMO Negative Prices — NEM Daylight Hours</title>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <link rel="stylesheet" href="assets/css/app.css">
-<style>
-  /* The heat table still carries its own rules until BRIEF step 3 moves it onto .th / .td / .seq-*.
-     Chrome, reset and typography come from assets/css/app.css (preflight is the only reset). */
-  .table-wrap { overflow-x: auto; }
-  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
-  th { background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 500; padding: 10px 12px; text-align: center; position: sticky; top: 0; white-space: nowrap; border-bottom: 1px solid var(--line); }
-  th:first-child { text-align: left; }
-  td { padding: 7px 12px; text-align: center; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
-  td:first-child { text-align: left; font-weight: 500; }
-  tr:hover td:first-child { background: var(--surface-2); }
-  .loading { text-align: center; padding: 40px; color: var(--muted); }
-</style>
 </head>
 <body>
 
@@ -50,11 +38,25 @@
     <div class="card-head flex-wrap">
       <div>
         <h2 id="heat-title" class="card-title">Share of daylight intervals below each price</h2>
-        <p class="card-sub">% of 5-min dispatch intervals, 8am–4pm AEST, by month</p>
+        <p class="card-sub">% of each month's daylight 5-min intervals (8am–4pm AEST) with a regional price below the column's threshold, $/MWh · latest month at the bottom</p>
       </div>
       <div class="seg" id="tabs" role="tablist" aria-label="Region"></div>
     </div>
-    <div class="table-wrap mt-4 border-t border-line-soft"><div class="loading" id="loading">Loading data…</div><table id="table" style="display:none"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 pt-4" data-heat-legend>
+      <span class="eyebrow">Scale</span>
+      <ol class="grid grid-cols-4 gap-px overflow-hidden rounded-md sm:grid-cols-8" aria-label="Heat scale: share of intervals, eight steps from 0% to 100%">
+        <li class="seq-0 num px-2 py-1 text-center text-[12px] font-medium">0%</li>
+        <li class="seq-1 num px-2 py-1 text-center text-[12px] font-medium">&lt;1%</li>
+        <li class="seq-2 num px-2 py-1 text-center text-[12px] font-medium">1–5%</li>
+        <li class="seq-3 num px-2 py-1 text-center text-[12px] font-medium">5–10%</li>
+        <li class="seq-4 num px-2 py-1 text-center text-[12px] font-medium">10–20%</li>
+        <li class="seq-5 num px-2 py-1 text-center text-[12px] font-medium">20–35%</li>
+        <li class="seq-6 num px-2 py-1 text-center text-[12px] font-medium">35–50%</li>
+        <li class="seq-7 num px-2 py-1 text-center text-[12px] font-medium">50–100%</li>
+      </ol>
+      <span class="text-[12px] leading-4 text-faint">→ more of the month's daylight below the price · each range includes its lower bound</span>
+    </div>
+    <div class="table-wrap mt-4 max-h-[min(72vh,760px)] overflow-auto border-t border-line-soft"><div class="px-5 py-10 text-center text-[13px] text-muted" id="loading">Loading data…</div><table id="table" class="w-full border-separate border-spacing-0" style="display:none"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
     <div class="card-foot" id="footer"></div>
   </section>
 
@@ -75,7 +77,7 @@
 <script>
 const REGIONS = {NSW1:'NSW',QLD1:'QLD',VIC1:'VIC',SA1:'SA',TAS1:'TAS'};
 const THRESHOLDS = ['0','neg10','neg20','neg30','neg40','neg50','neg60','neg70','neg80'];
-const TH_LABELS = ['< $0','< -$10','< -$20','< -$30','< -$40','< -$50','< -$60','< -$70','< -$80'];
+const TH_LABELS = ['< $0','< −$10','< −$20','< −$30','< −$40','< −$50','< −$60','< −$70','< −$80'];
 const EXCEL_FILES = {NSW1:'NSW_negative_prices.xlsx',QLD1:'QLD_negative_prices.xlsx',VIC1:'VIC_negative_prices.xlsx',SA1:'SA_negative_prices.xlsx',TAS1:'TAS_negative_prices.xlsx'};
 
 let allData = [];
@@ -87,26 +89,15 @@ function formatMonth(ym) {
   return months[parseInt(m)-1] + ' ' + y;
 }
 
-function heatColor(pct) {
-  // 0% = green (#63BE7B), 50% = yellow (#FFEB84), 100% = red (#F8696B)
-  const p = Math.min(pct / 100, 1);
-  let r, g, b;
-  if (p <= 0.5) {
-    const t = p / 0.5;
-    r = Math.round(99 + (255 - 99) * t);
-    g = Math.round(190 + (235 - 190) * t);
-    b = Math.round(123 + (132 - 123) * t);
-  } else {
-    const t = (p - 0.5) / 0.5;
-    r = Math.round(255 + (248 - 255) * t);
-    g = Math.round(235 + (105 - 235) * t);
-    b = Math.round(132 + (107 - 132) * t);
-  }
-  return `rgb(${r},${g},${b})`;
-}
-
-function textColor(pct) {
-  return pct > 15 ? '#1a1a1a' : '#e0e0e0';
+// Heat: the JS picks a step on the token ramp (.seq-0 … .seq-7), never a colour, so the light theme
+// flips it from the tokens alone. The stops are uneven on purpose: a fifth of all cells are exactly 0
+// and the median is under 2%, so equal 12.5-point bins would paint most of the table one colour.
+// Keep these in step with the legend in the table card's head.
+const HEAT_STOPS = [1, 5, 10, 20, 35, 50];   // 0 → seq-0; (0,1) → seq-1; [1,5) → seq-2 … [50,100] → seq-7
+function heatStep(pct) {
+  if (pct <= 0) return 0;
+  const i = HEAT_STOPS.findIndex(s => pct < s);
+  return i === -1 ? 7 : i + 1;
 }
 
 // KPI row: every value is read from outputs/summary.csv for the active region; each names its month.
@@ -160,7 +151,7 @@ function renderKpis() {
   if (deep >= 0) {
     const t = THRESHOLDS[deep];
     const hits = rows.filter(r => parseInt(r[`count_below_${t}`]) > 0);
-    t3 = kpiTile(TH_LABELS[deep].replace('-', '−'), 'Deepest threshold crossed',
+    t3 = kpiTile(TH_LABELS[deep], 'Deepest threshold crossed',
       `last in ${formatMonth(hits[hits.length - 1].YEAR_MONTH)} · ${hits.length} of ${rows.length} months`);
   } else {
     t3 = kpiTile('None', 'Deepest threshold crossed', `no interval below $0 in ${rows.length} months`);
@@ -197,21 +188,24 @@ function renderTabs() {
 function renderTable() {
   const thead = document.getElementById('thead');
   const tbody = document.getElementById('tbody');
-  thead.innerHTML = '<tr><th>Month</th>' + TH_LABELS.map(l => `<th>${l}</th>`).join('') + '</tr>';
+  thead.innerHTML = '<tr><th class="th sticky left-0 z-20" scope="col">Month</th>' +
+    TH_LABELS.map(l => `<th class="th text-right" scope="col">${l}</th>`).join('') + '</tr>';
 
   const rows = allData.filter(r => r.REGIONID === activeRegion).sort((a, b) => a.YEAR_MONTH.localeCompare(b.YEAR_MONTH));
   tbody.innerHTML = rows.map(row => {
     const cells = THRESHOLDS.map(t => {
-      const val = parseFloat(row[`pct_below_${t}`]) || 0;
-      const bg = heatColor(val);
-      const fg = textColor(val);
-      return `<td style="background:${bg};color:${fg}">${val.toFixed(2)}%</td>`;
+      const val = parseFloat(row[`pct_below_${t}`]);
+      if (isNaN(val)) return '<td class="td-num whitespace-nowrap text-faint">N/A</td>';
+      return `<td class="td-num seq-${heatStep(val)} whitespace-nowrap border-l border-l-surface border-b-surface">${val.toFixed(2)}%</td>`;
     }).join('');
-    return `<tr><td>${formatMonth(row.YEAR_MONTH)}</td>${cells}</tr>`;
+    return `<tr class="group"><th class="td sticky left-0 z-[1] whitespace-nowrap bg-surface text-left font-medium text-ink group-hover:bg-surface-2" scope="row">${formatMonth(row.YEAR_MONTH)}</th>${cells}</tr>`;
   }).join('');
 
   document.getElementById('table').style.display = '';
   document.getElementById('loading').style.display = 'none';
+  // Rows run oldest → newest; open on the newest months, under the sticky header.
+  const wrap = document.querySelector('.table-wrap');
+  wrap.scrollTop = wrap.scrollHeight;
 }
 
 function renderDownloads() {
@@ -235,7 +229,11 @@ Papa.parse('outputs/summary.csv', {
     // Find latest month for footer
     const months = [...new Set(allData.map(r => r.YEAR_MONTH))].sort();
     const latest = months[months.length - 1];
-    document.getElementById('footer').textContent = `Data through ${formatMonth(latest)} · Updates monthly on the 16th · Source: AEMO DISPATCHPRICE via NEMOSIS`;
+    const dot = '<span aria-hidden="true">·</span>';
+    document.getElementById('footer').innerHTML =
+      '<span>Source: AEMO DISPATCHPRICE (RRP, intervention pricing excluded) via NEMOSIS</span>' + dot +
+      `<span class="text-muted">as of ${formatMonth(latest)}</span>` + dot +
+      "<span>Checked daily; a month appears once AEMO publishes that month's archive</span>";
     renderTabs();
     renderKpis();
     renderTable();
