@@ -23,10 +23,14 @@
 <main class="min-h-[calc(100vh-1rem)] bg-canvas sm:rounded-panel sm:border sm:border-line-soft">
 <div class="mx-auto max-w-[1160px] px-4 py-6 sm:px-8 sm:py-10">
 
-  <header>
+  <header class="grid grid-cols-[1fr_auto] items-center gap-x-4">
     <p class="eyebrow">National Electricity Market · daylight hours</p>
-    <h1 class="mt-1.5 text-[22px] font-semibold leading-7 text-ink">AEMO Negative Prices</h1>
-    <p class="mt-1.5 max-w-[72ch] text-[13px] leading-5 text-muted">Percentage of daylight 5-min intervals (8am–4pm AEST) with negative dispatch prices — NEM regions, May 2019 to present</p>
+    <div class="seg" role="group" aria-label="Theme">
+      <button type="button" class="seg-item max-sm:h-8 max-sm:px-3" data-theme-set="dark">Dark</button>
+      <button type="button" class="seg-item max-sm:h-8 max-sm:px-3" data-theme-set="light">Light</button>
+    </div>
+    <h1 class="col-span-2 mt-1.5 text-[22px] font-semibold leading-7 text-ink">AEMO Negative Prices</h1>
+    <p class="col-span-2 mt-1.5 max-w-[72ch] text-[13px] leading-5 text-muted">Percentage of daylight 5-min intervals (8am–4pm AEST) with negative dispatch prices — NEM regions, May 2019 to present</p>
   </header>
 
   <section class="card mt-6 overflow-hidden" aria-labelledby="kpi-title">
@@ -42,6 +46,16 @@
       <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div></div>
       <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div></div>
     </div>
+  </section>
+
+  <section class="card mt-4" aria-labelledby="dl-title">
+    <div class="card-head">
+      <div>
+        <h2 id="dl-title" class="card-title">Download the workbooks</h2>
+        <p class="card-sub" id="dl-sub">Excel · one workbook per region, plus All States</p>
+      </div>
+    </div>
+    <div class="card-body"><div class="flex flex-wrap items-center gap-2" id="downloads"></div></div>
   </section>
 
   <section class="card mt-4 overflow-hidden" aria-labelledby="heat-title">
@@ -71,22 +85,9 @@
     <div class="card-foot" id="footer"><span>Source: AEMO DISPATCHPRICE (RRP, intervention pricing excluded) via NEMOSIS</span><span aria-hidden="true">·</span><span>as of: loading…</span></div>
   </section>
 
-  <section class="card mt-4" aria-labelledby="dl-title">
-    <div class="card-head">
-      <div>
-        <h2 id="dl-title" class="card-title">Download the workbooks</h2>
-        <p class="card-sub" id="dl-sub">Excel · one workbook per region, plus All States</p>
-      </div>
-    </div>
-    <div class="card-body"><div class="flex flex-wrap items-center gap-2" id="downloads"></div></div>
-  </section>
 
-  <footer class="mt-6 flex flex-wrap items-center justify-between gap-3 text-[12px] leading-4 text-faint">
+  <footer class="mt-6 text-[12px] leading-4 text-faint">
     <span>Static page · figures computed in your browser from <a class="underline decoration-line-strong underline-offset-2 hover:text-ink max-sm:-my-2.5 max-sm:inline-block max-sm:py-2.5" href="outputs/summary.csv">outputs/summary.csv</a></span>
-    <div class="seg" role="group" aria-label="Theme">
-      <button type="button" class="seg-item max-sm:h-8 max-sm:px-3" data-theme-set="dark">Dark</button>
-      <button type="button" class="seg-item max-sm:h-8 max-sm:px-3" data-theme-set="light">Light</button>
-    </div>
   </footer>
 
 </div>

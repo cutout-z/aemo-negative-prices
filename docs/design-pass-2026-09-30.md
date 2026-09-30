@@ -15,7 +15,8 @@ Not merged, no PR. This note is how the next agent reconstructs intent without t
 | `8cf7506` | 5 | loading skeletons, missing-file / empty-file / no-rows `.state` panels |
 | `770d28d` | 6 | `data-theme` dark default, remembered Dark/Light toggle, `?theme=` forcing |
 | `7889313` | 7 | phone: 32px targets, pinned-column edge; region switch beside the title on desktop |
-| (this) | handback | after-screenshots, this note |
+| `274bf24` | handback | after-screenshots, this note |
+| (follow-up) | Zalen's review | theme switch moved to the header (top right); downloads card moved between the KPI card and the heat table |
 
 Step 8 (interactions) needed no code: `verify-interactions.py` stayed 25/25 after every step.
 
@@ -34,7 +35,8 @@ both gate scripts (apart from Hermes' `0818bcb`).
 ## Visual summary
 
 - **Shell:** `--bg` frame, inset `--canvas` panel (≥640px), 1160px column, header with eyebrow /
-  title / subtitle (copy unchanged). Page height at 1440×900: **3,026 → 1,504 px**; phone 390px:
+  title / subtitle (copy unchanged) and the Dark / Light switch top right, on the eyebrow's line.
+- **Card order (Zalen's call):** KPI card → downloads card → heat table card. Page height at 1440×900: **3,026 → 1,504 px**; phone 390px:
   **3,117 → ~1,990 px**.
 - **KPI card** ("SA at a glance"), four tiles, all computed in the page from `outputs/summary.csv`
   for the active region, each naming its month:
@@ -64,8 +66,7 @@ both gate scripts (apart from Hermes' `0818bcb`).
 - **Downloads card:** the active region's workbook is the one `.btn-primary`, then All States, then
   the other four as `.btn-ghost`. The subtitle states the contents (region workbook = three sheets,
   All States = a percentages sheet per region, per `src/excel_output.py`).
-- **Page footer row:** "figures computed in your browser from outputs/summary.csv" (a plain link)
-  and the Dark / Light toggle.
+- **Page footer line:** "figures computed in your browser from outputs/summary.csv" (a plain link).
 - **States:** skeletons while loading. The region switch, footer source line and downloads render
   before the CSV arrives. A failed fetch shows a `.state` in each card naming `outputs/summary.csv`
   and what fixes it; an empty file and a region with no rows each have their own `.state`.
@@ -76,9 +77,14 @@ both gate scripts (apart from Hermes' `0818bcb`).
 |---|---|---|
 | `tests/validate_outputs.py` | exit 0 | **exit 0** — "All validations passed." |
 | `scripts/verify-interactions.py` | 25 checks, exit 0 | **25 checks, exit 0** — "all interactions intact" |
-| `scripts/verify-design.py` | 12 of 26 fail | **27 of 27 pass, exit 0** |
+| `scripts/verify-design.py` | 12 of 26 fail | **27 of 27 pass, exit 0**; 28 of 28 against the uncommitted gate edits in the working tree (see below) |
 
-The design gate reports 27 checks; BRIEF.md says 28. The count went 26 → 27 when the page gained
+Uncommitted edits to `scripts/verify-design.py` appeared in this folder during the follow-up. They
+were not made by this session and are not in its commits. They read the second `:root` block (the
+`seq-*` ramp), add "every heat cell is actually filled from the ramp" (a pixel check), and require the
+missing-file `.state` to be visible. The page passes all 28.
+
+The committed design gate reports 27 checks; BRIEF.md says 28. The count went 26 → 27 when the page gained
 `.card` panels (the card-background check only runs when a card exists). No check was removed.
 
 Also checked in a browser (Playwright, scratch scripts, not committed):
@@ -115,9 +121,13 @@ takes screenshots, so `after-top` and `after-vic-top` are identical.
 2. **Step 1 built the table card early.** `.card-foot` needs a card; step 3 then filled it in.
 3. **Six download buttons, not "the region's workbook + All States".** The gates pin six; the
    selected region leads and the others are quieter.
-4. **The theme toggle is at the bottom of the page, not in the header.** The interaction gate's
-   keyboard check presses Tab once and expects a region tab. A header toggle would take that focus,
-   and its Enter would flip the theme.
+4. **The theme switch is in the header (Zalen's call; it was at the bottom until the follow-up).**
+   Consequence: `verify-interactions.py`'s "a region tab can take focus" presses Tab once and now
+   lands on **Dark**. It still passes (it only checks that the focused element has text, and Enter on
+   Dark is a no-op), but it no longer exercises a region tab. Checked separately: Tab order is Dark,
+   Light, the region workbook, All States, four other-region links, then **NSW**; Enter on NSW switches
+   the page to NSW. If the gate should test what its name says, it needs to Tab until
+   `#tabs .seg-item` has focus. Not changed here: the gate is not this pass's to edit.
 5. **A second inline `<script>`** (in `<head>`, sets the theme before first paint). It is not a new
    dependency; PapaParse is still the only external script.
 6. **Month cells are `<th scope="row" class="td …">`**, not `<td>`, for accessibility. `.td` is kept
