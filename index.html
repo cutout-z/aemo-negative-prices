@@ -1,10 +1,20 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AEMO Negative Prices — NEM Daylight Hours</title>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+  // Theme before first paint: ?theme=light|dark forces one (screenshots, shared links) without
+  // changing the saved choice; otherwise the viewer's saved choice; otherwise dark.
+  (function () {
+    var t = null;
+    try { t = new URLSearchParams(location.search).get('theme'); } catch (e) {}
+    if (t !== 'light' && t !== 'dark') { try { t = localStorage.getItem('aemo-negative-prices:theme'); } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+  })();
+</script>
 <link rel="stylesheet" href="assets/css/app.css">
 </head>
 <body>
@@ -70,6 +80,14 @@
     </div>
     <div class="card-body"><div class="flex flex-wrap items-center gap-2" id="downloads"></div></div>
   </section>
+
+  <footer class="mt-6 flex flex-wrap items-center justify-between gap-3 text-[12px] leading-4 text-faint">
+    <span>Static page · figures computed in your browser from <a class="underline decoration-line-strong underline-offset-2 hover:text-ink" href="outputs/summary.csv">outputs/summary.csv</a></span>
+    <div class="seg" role="group" aria-label="Theme">
+      <button type="button" class="seg-item" data-theme-set="dark">Dark</button>
+      <button type="button" class="seg-item" data-theme-set="light">Light</button>
+    </div>
+  </footer>
 
 </div>
 </main>
@@ -274,6 +292,22 @@ function renderDownloads() {
       `<a class="btn btn-ghost" href="${repoBase}${EXCEL_FILES[id]}" download>${icon}${n}</a>`
     ).join('');
 }
+
+// Theme toggle: remembered per viewer; the tokens flip every surface and the heat ramp.
+function syncThemeButtons() {
+  const cur = document.documentElement.getAttribute('data-theme');
+  document.querySelectorAll('[data-theme-set]').forEach(b => {
+    const on = b.dataset.themeSet === cur;
+    b.classList.toggle('seg-item-active', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+document.querySelectorAll('[data-theme-set]').forEach(b => b.addEventListener('click', () => {
+  document.documentElement.setAttribute('data-theme', b.dataset.themeSet);
+  try { localStorage.setItem('aemo-negative-prices:theme', b.dataset.themeSet); } catch (e) {}
+  syncThemeButtons();
+}));
+syncThemeButtons();
 
 // The region switch and the workbook links do not depend on the CSV: render them before it arrives.
 renderTabs();
