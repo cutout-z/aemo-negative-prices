@@ -1,49 +1,103 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AEMO Negative Prices — NEM Daylight Hours</title>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<style>
-  :root { --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a; --text: #e0e0e0; --muted: #888; --accent: #4472C4; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
-  h1 { font-size: 1.5rem; margin-bottom: 4px; }
-  .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 20px; }
-  .tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
-  .tab { padding: 8px 18px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: 6px 6px 0 0; cursor: pointer; font-size: 0.9rem; transition: all 0.15s; }
-  .tab:hover { color: var(--text); border-color: var(--accent); }
-  .tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
-  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
-  th { background: var(--accent); color: #fff; padding: 10px 12px; text-align: center; position: sticky; top: 0; white-space: nowrap; }
-  th:first-child { text-align: left; }
-  td { padding: 7px 12px; text-align: center; border-bottom: 1px solid var(--border); white-space: nowrap; }
-  td:first-child { text-align: left; font-weight: 500; }
-  tr:hover td { background: rgba(68,114,196,0.08); }
-  .downloads { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
-  .dl-btn { display: inline-block; padding: 8px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--accent); text-decoration: none; font-size: 0.85rem; transition: all 0.15s; }
-  .dl-btn:hover { background: var(--accent); color: #fff; }
-  .footer { margin-top: 24px; color: var(--muted); font-size: 0.78rem; }
-  .loading { text-align: center; padding: 40px; color: var(--muted); }
-</style>
+<script>
+  // Theme before first paint: ?theme=light|dark forces one (screenshots, shared links) without
+  // changing the saved choice; otherwise the viewer's saved choice; otherwise dark.
+  (function () {
+    var t = null;
+    try { t = new URLSearchParams(location.search).get('theme'); } catch (e) {}
+    if (t !== 'light' && t !== 'dark') { try { t = localStorage.getItem('aemo-negative-prices:theme'); } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+  })();
+</script>
+<link rel="stylesheet" href="assets/css/app.css">
 </head>
 <body>
 
-<h1>AEMO Negative Prices</h1>
-<p class="subtitle">Percentage of daylight 5-min intervals (8am–4pm AEST) with negative dispatch prices — NEM regions, May 2019 to present</p>
+<div class="min-h-screen sm:p-2">
+<main class="min-h-[calc(100vh-1rem)] bg-canvas sm:rounded-panel sm:border sm:border-line-soft">
+<div class="mx-auto max-w-[1160px] px-4 py-6 sm:px-8 sm:py-10">
 
-<div class="tabs" id="tabs"></div>
-<div class="table-wrap"><div class="loading" id="loading">Loading data…</div><table id="table" style="display:none"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+  <header class="grid grid-cols-[1fr_auto] items-center gap-x-4">
+    <p class="eyebrow">National Electricity Market · daylight hours</p>
+    <div class="seg" role="group" aria-label="Theme">
+      <button type="button" class="seg-item max-sm:h-8 max-sm:px-3" data-theme-set="dark">Dark</button>
+      <button type="button" class="seg-item max-sm:h-8 max-sm:px-3" data-theme-set="light">Light</button>
+    </div>
+    <h1 class="col-span-2 mt-1.5 text-[22px] font-semibold leading-7 text-ink">AEMO Negative Prices</h1>
+    <p class="col-span-2 mt-1.5 max-w-[72ch] text-[13px] leading-5 text-muted">Percentage of daylight 5-min intervals (8am–4pm AEST) with negative dispatch prices — NEM regions, May 2019 to present</p>
+  </header>
 
-<div class="downloads" id="downloads"></div>
-<div class="footer" id="footer"></div>
+  <section class="card mt-6 overflow-hidden" aria-labelledby="kpi-title">
+    <div class="card-head">
+      <div>
+        <h2 id="kpi-title" class="card-title">At a glance</h2>
+        <p class="card-sub" id="kpi-sub">Share of daylight intervals priced below $0, for the region selected in the table</p>
+      </div>
+    </div>
+    <div class="mt-4 grid grid-cols-2 gap-px border-t border-line-soft bg-line-soft lg:grid-cols-4" id="kpis" aria-live="polite">
+      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div></div>
+      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div></div>
+      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div></div>
+      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div></div>
+    </div>
+  </section>
+
+  <section class="card mt-4" aria-labelledby="dl-title">
+    <div class="card-head">
+      <div>
+        <h2 id="dl-title" class="card-title">Download the workbooks</h2>
+        <p class="card-sub" id="dl-sub">Excel · one workbook per region, plus All States</p>
+      </div>
+    </div>
+    <div class="card-body"><div class="flex flex-wrap items-center gap-2" id="downloads"></div></div>
+  </section>
+
+  <section class="card mt-4 overflow-hidden" aria-labelledby="heat-title">
+    <div class="card-head flex-wrap">
+      <div class="min-w-0 flex-1 basis-80">
+        <h2 id="heat-title" class="card-title">Share of daylight intervals below each price</h2>
+        <p class="card-sub">% of each month's daylight 5-min intervals (8am–4pm AEST) with a regional price below the column's threshold, $/MWh · latest month at the bottom</p>
+        <div class="mt-2.5 flex flex-wrap gap-1.5" id="badges"></div>
+      </div>
+      <div class="seg" id="tabs" role="tablist" aria-label="Region"></div>
+    </div>
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 pt-4" data-heat-legend>
+      <span class="eyebrow">Scale</span>
+      <ol class="grid grid-cols-4 gap-px overflow-hidden rounded-md sm:grid-cols-8" aria-label="Heat scale: share of intervals, eight steps from 0% to 100%">
+        <li class="seq-0 num px-2 py-1 text-center text-[12px] font-medium">0%</li>
+        <li class="seq-1 num px-2 py-1 text-center text-[12px] font-medium">&lt;1%</li>
+        <li class="seq-2 num px-2 py-1 text-center text-[12px] font-medium">1–5%</li>
+        <li class="seq-3 num px-2 py-1 text-center text-[12px] font-medium">5–10%</li>
+        <li class="seq-4 num px-2 py-1 text-center text-[12px] font-medium">10–20%</li>
+        <li class="seq-5 num px-2 py-1 text-center text-[12px] font-medium">20–35%</li>
+        <li class="seq-6 num px-2 py-1 text-center text-[12px] font-medium">35–50%</li>
+        <li class="seq-7 num px-2 py-1 text-center text-[12px] font-medium">50–100%</li>
+      </ol>
+      <span class="text-[12px] leading-4 text-faint">→ more of the month's daylight below the price · each range includes its lower bound</span>
+    </div>
+    <div class="table-wrap mt-4 max-h-[min(72vh,760px)] overflow-auto border-t border-line-soft"><div id="table-state"><div class="space-y-2.5 px-5 py-5" role="status" aria-label="Loading data"><div class="skeleton h-4 w-full"></div><div class="skeleton h-4 w-full"></div><div class="skeleton h-4 w-11/12"></div><div class="skeleton h-4 w-full"></div><div class="skeleton h-4 w-10/12"></div><div class="skeleton h-4 w-full"></div></div></div><table id="table" class="w-full border-separate border-spacing-0" style="display:none"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+    <div class="card-foot" id="footer"><span>Source: AEMO DISPATCHPRICE (RRP, intervention pricing excluded) via NEMOSIS</span><span aria-hidden="true">·</span><span>as of: loading…</span></div>
+  </section>
+
+
+  <footer class="mt-6 text-[12px] leading-4 text-faint">
+    <span>Static page · figures computed in your browser from <a class="underline decoration-line-strong underline-offset-2 hover:text-ink max-sm:-my-2.5 max-sm:inline-block max-sm:py-2.5" href="outputs/summary.csv">outputs/summary.csv</a></span>
+  </footer>
+
+</div>
+</main>
+</div>
 
 <script>
 const REGIONS = {NSW1:'NSW',QLD1:'QLD',VIC1:'VIC',SA1:'SA',TAS1:'TAS'};
 const THRESHOLDS = ['0','neg10','neg20','neg30','neg40','neg50','neg60','neg70','neg80'];
-const TH_LABELS = ['< $0','< -$10','< -$20','< -$30','< -$40','< -$50','< -$60','< -$70','< -$80'];
+const TH_LABELS = ['< $0','< −$10','< −$20','< −$30','< −$40','< −$50','< −$60','< −$70','< −$80'];
 const EXCEL_FILES = {NSW1:'NSW_negative_prices.xlsx',QLD1:'QLD_negative_prices.xlsx',VIC1:'VIC_negative_prices.xlsx',SA1:'SA_negative_prices.xlsx',TAS1:'TAS_negative_prices.xlsx'};
 
 let allData = [];
@@ -55,26 +109,116 @@ function formatMonth(ym) {
   return months[parseInt(m)-1] + ' ' + y;
 }
 
-function heatColor(pct) {
-  // 0% = green (#63BE7B), 50% = yellow (#FFEB84), 100% = red (#F8696B)
-  const p = Math.min(pct / 100, 1);
-  let r, g, b;
-  if (p <= 0.5) {
-    const t = p / 0.5;
-    r = Math.round(99 + (255 - 99) * t);
-    g = Math.round(190 + (235 - 190) * t);
-    b = Math.round(123 + (132 - 123) * t);
-  } else {
-    const t = (p - 0.5) / 0.5;
-    r = Math.round(255 + (248 - 255) * t);
-    g = Math.round(235 + (105 - 235) * t);
-    b = Math.round(132 + (107 - 132) * t);
-  }
-  return `rgb(${r},${g},${b})`;
+// Heat: the JS picks a step on the token ramp (.seq-0 … .seq-7), never a colour, so the light theme
+// flips it from the tokens alone. The stops are uneven on purpose: a fifth of all cells are exactly 0
+// and the median is under 2%, so equal 12.5-point bins would paint most of the table one colour.
+// Keep these in step with the legend in the table card's head.
+const HEAT_STOPS = [1, 5, 10, 20, 35, 50];   // 0 → seq-0; (0,1) → seq-1; [1,5) → seq-2 … [50,100] → seq-7
+function heatStep(pct) {
+  if (pct <= 0) return 0;
+  const i = HEAT_STOPS.findIndex(s => pct < s);
+  return i === -1 ? 7 : i + 1;
 }
 
-function textColor(pct) {
-  return pct > 15 ? '#1a1a1a' : '#e0e0e0';
+// States: absence is stated, never faked with a zero.
+const STATE_ICON = '<svg class="state-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 4.75v3.75M8 11h.01"/></svg>';
+function stateHTML(title, body) {
+  return `<div class="state px-5" role="status">${STATE_ICON}<div><p class="state-title">${title}</p><p class="state-body">${body}</p></div></div>`;
+}
+function kpiState(title, body) {
+  document.getElementById('kpis').innerHTML = `<div class="col-span-2 bg-surface lg:col-span-4">${stateHTML(title, body)}</div>`;
+}
+function tableState(html) {
+  const box = document.getElementById('table-state');
+  box.innerHTML = html;
+  box.style.display = html ? '' : 'none';
+  document.getElementById('table').style.display = html ? 'none' : '';
+}
+const CSV_PATH = '<code class="mono text-ink">outputs/summary.csv</code>';
+
+function loadFailed(title, body) {
+  kpiState('No figures to show', 'The data file is not available, so there is nothing to summarise.');
+  tableState(stateHTML(title, body));
+  document.getElementById('tabs').style.display = 'none';
+  document.getElementById('badges').innerHTML = '';
+  document.getElementById('footer').innerHTML =
+    '<span>Source: AEMO DISPATCHPRICE (RRP, intervention pricing excluded) via NEMOSIS</span>' +
+    '<span aria-hidden="true">·</span><span>as of: not known — the data file did not load</span>';
+  renderDownloads();
+}
+
+// KPI row: every value is read from outputs/summary.csv for the active region; each names its month.
+function shiftYear(ym, years) {
+  const [y, m] = ym.split('-');
+  return (parseInt(y) + years) + '-' + m;
+}
+
+function pct(v) { return parseFloat(v).toFixed(2) + '%'; }
+
+function kpiTile(value, label, note) {
+  return `<div class="bg-surface px-5 py-4"><div class="kpi-value">${value}</div>` +
+    `<div class="kpi-label">${label}</div>` +
+    `<div class="mt-2 text-[12px] leading-4 text-faint num">${note}</div></div>`;
+}
+
+function renderKpis() {
+  const name = REGIONS[activeRegion];
+  const rows = allData.filter(r => r.REGIONID === activeRegion).sort((a, b) => a.YEAR_MONTH.localeCompare(b.YEAR_MONTH));
+  document.getElementById('kpi-title').textContent = `${name} at a glance`;
+  if (!rows.length) {
+    document.getElementById('kpi-sub').textContent = `No rows for ${activeRegion} in the data file`;
+    kpiState(`No months for ${name}`, `${CSV_PATH} has no rows for ${activeRegion}, so there is nothing to summarise for this region.`);
+    return;
+  }
+  const box = document.getElementById('kpis');
+
+  const last = rows[rows.length - 1];
+  const month = last.YEAR_MONTH;
+  document.getElementById('kpi-sub').textContent =
+    `Share of daylight 5-min intervals priced below $0 · latest month in the data, ${formatMonth(month)}`;
+
+  // 1. latest month, below $0
+  const now = parseFloat(last.pct_below_0);
+  const t1 = kpiTile(pct(now), `Below $0 · ${formatMonth(month)}`,
+    `${Number(last.count_below_0).toLocaleString('en-AU')} of ${Number(last.total_daylight_intervals).toLocaleString('en-AU')} daylight intervals`);
+
+  // 2. the same month a year earlier, and the change to now
+  const prevMonth = shiftYear(month, -1);
+  const prev = rows.find(r => r.YEAR_MONTH === prevMonth);
+  let t2;
+  if (prev) {
+    const then = parseFloat(prev.pct_below_0);
+    const d = now - then;
+    const word = Math.abs(d) < 0.005 ? 'unchanged' : (d > 0 ? 'up ' : 'down ') + Math.abs(d).toFixed(2) + ' pts';
+    t2 = kpiTile(pct(then), `Below $0 · ${formatMonth(prevMonth)}`, `${formatMonth(month)} is ${word}`);
+  } else {
+    t2 = kpiTile('N/A', `Below $0 · ${formatMonth(prevMonth)}`, 'no row for this month in the data');
+  }
+
+  // 3. the deepest threshold this region has ever crossed, and when
+  let deep = -1;
+  THRESHOLDS.forEach((t, i) => { if (rows.some(r => parseInt(r[`count_below_${t}`]) > 0)) deep = i; });
+  let t3;
+  if (deep >= 0) {
+    const t = THRESHOLDS[deep];
+    const hits = rows.filter(r => parseInt(r[`count_below_${t}`]) > 0);
+    t3 = kpiTile(TH_LABELS[deep], 'Deepest threshold crossed',
+      `last in ${formatMonth(hits[hits.length - 1].YEAR_MONTH)} · ${hits.length} of ${rows.length} months`);
+  } else {
+    t3 = kpiTile('None', 'Deepest threshold crossed', `no interval below $0 in ${rows.length} months`);
+  }
+
+  // 4. rank of the five regions on the latest month's share below $0 (1 = most negative pricing)
+  const peers = allData.filter(r => r.YEAR_MONTH === month);
+  const higher = peers.filter(r => parseFloat(r.pct_below_0) > now).length;
+  const tied = peers.filter(r => r.REGIONID !== activeRegion && parseFloat(r.pct_below_0) === now).length;
+  const top = peers.reduce((a, b) => parseFloat(b.pct_below_0) > parseFloat(a.pct_below_0) ? b : a);
+  const note = top.REGIONID === activeRegion
+    ? `highest of the ${peers.length} in ${formatMonth(month)}`
+    : `highest: ${REGIONS[top.REGIONID]} at ${pct(top.pct_below_0)}`;
+  const t4 = kpiTile(`${tied ? '=' : ''}${higher + 1} of ${peers.length}`, `Rank below $0 · ${formatMonth(month)}`, note);
+
+  box.innerHTML = t1 + t2 + t3 + t4;
 }
 
 function renderTabs() {
@@ -82,9 +226,12 @@ function renderTabs() {
   container.innerHTML = '';
   for (const [id, name] of Object.entries(REGIONS)) {
     const btn = document.createElement('button');
-    btn.className = 'tab' + (id === activeRegion ? ' active' : '');
+    btn.type = 'button';
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', id === activeRegion ? 'true' : 'false');
+    btn.className = 'seg-item max-sm:h-8 max-sm:px-3' + (id === activeRegion ? ' seg-item-active' : '');
     btn.textContent = name;
-    btn.onclick = () => { activeRegion = id; renderTabs(); renderTable(); };
+    btn.onclick = () => { activeRegion = id; renderTabs(); renderDownloads(); if (allData.length) { renderKpis(); renderTable(); } };
     container.appendChild(btn);
   }
 }
@@ -92,49 +239,109 @@ function renderTabs() {
 function renderTable() {
   const thead = document.getElementById('thead');
   const tbody = document.getElementById('tbody');
-  thead.innerHTML = '<tr><th>Month</th>' + TH_LABELS.map(l => `<th>${l}</th>`).join('') + '</tr>';
+  thead.innerHTML = '<tr><th class="th sticky left-0 z-20 border-r" scope="col">Month</th>' +
+    TH_LABELS.map(l => `<th class="th text-right" scope="col">${l}</th>`).join('') + '</tr>';
 
   const rows = allData.filter(r => r.REGIONID === activeRegion).sort((a, b) => a.YEAR_MONTH.localeCompare(b.YEAR_MONTH));
+  renderBadges(rows);
+  if (!rows.length) {
+    tbody.innerHTML = '';
+    tableState(stateHTML(`No months for ${REGIONS[activeRegion]}`,
+      `${CSV_PATH} loaded, but it has no rows for ${activeRegion}. The other regions are unaffected; this one fills in when the data update writes its rows.`));
+    return;
+  }
   tbody.innerHTML = rows.map(row => {
     const cells = THRESHOLDS.map(t => {
-      const val = parseFloat(row[`pct_below_${t}`]) || 0;
-      const bg = heatColor(val);
-      const fg = textColor(val);
-      return `<td style="background:${bg};color:${fg}">${val.toFixed(2)}%</td>`;
+      const val = parseFloat(row[`pct_below_${t}`]);
+      if (isNaN(val)) return '<td class="td-num whitespace-nowrap text-faint">N/A</td>';
+      return `<td class="td-num seq-${heatStep(val)} whitespace-nowrap border-l border-l-surface border-b-surface">${val.toFixed(2)}%</td>`;
     }).join('');
-    return `<tr><td>${formatMonth(row.YEAR_MONTH)}</td>${cells}</tr>`;
+    return `<tr class="group"><th class="td sticky left-0 z-[1] whitespace-nowrap border-r border-r-line bg-surface text-left font-medium text-ink group-hover:bg-surface-2" scope="row">${formatMonth(row.YEAR_MONTH)}</th>${cells}</tr>`;
   }).join('');
 
-  document.getElementById('table').style.display = '';
-  document.getElementById('loading').style.display = 'none';
+  tableState('');
+  // Rows run oldest → newest; open on the newest months, under the sticky header.
+  const wrap = document.querySelector('.table-wrap');
+  wrap.scrollTop = wrap.scrollHeight;
 }
 
+// Counts the page already knows, for the active region: rows (months) and their span.
+function renderBadges(rows) {
+  const box = document.getElementById('badges');
+  if (!rows.length) { box.innerHTML = ''; return; }
+  box.innerHTML =
+    `<span class="badge num">${rows.length} months</span>` +
+    `<span class="badge num">${formatMonth(rows[0].YEAR_MONTH)} – ${formatMonth(rows[rows.length - 1].YEAR_MONTH)}</span>` +
+    `<span class="badge num">${THRESHOLDS.length} thresholds</span>`;
+}
+
+// The six workbooks: the active region's first (primary), then All States, then the other four.
 function renderDownloads() {
   const container = document.getElementById('downloads');
   const repoBase = 'https://github.com/cutout-z/aemo-negative-prices/raw/main/outputs/';
-  container.innerHTML = '<strong style="width:100%;margin-bottom:4px">Download Excel:&nbsp;</strong>' +
-    Object.entries(REGIONS).map(([id, name]) =>
-      `<a class="dl-btn" href="${repoBase}${EXCEL_FILES[id]}" download>${name}</a>`
-    ).join('') +
-    `<a class="dl-btn" href="${repoBase}All_States_negative_prices.xlsx" download style="border-color:var(--accent);font-weight:600">All States</a>`;
+  const icon = '<svg class="size-3.5 opacity-70" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/></svg>';
+  const name = REGIONS[activeRegion];
+  document.getElementById('dl-sub').textContent =
+    `Excel · the ${name} workbook (three sheets), All States (a percentages sheet per region), or another region`;
+  const others = Object.entries(REGIONS).filter(([id]) => id !== activeRegion);
+  container.innerHTML =
+    `<a class="btn btn-primary" href="${repoBase}${EXCEL_FILES[activeRegion]}" download>${icon}${name} workbook</a>` +
+    `<a class="btn" href="${repoBase}All_States_negative_prices.xlsx" download>${icon}All States</a>` +
+    '<span class="mx-1 hidden h-5 w-px bg-line sm:inline-block" aria-hidden="true"></span>' +
+    '<span class="eyebrow ml-1 mr-0.5 w-full sm:ml-0 sm:w-auto">Other regions</span>' +
+    others.map(([id, n]) =>
+      `<a class="btn btn-ghost" href="${repoBase}${EXCEL_FILES[id]}" download>${icon}${n}</a>`
+    ).join('');
 }
+
+// Theme toggle: remembered per viewer; the tokens flip every surface and the heat ramp.
+function syncThemeButtons() {
+  const cur = document.documentElement.getAttribute('data-theme');
+  document.querySelectorAll('[data-theme-set]').forEach(b => {
+    const on = b.dataset.themeSet === cur;
+    b.classList.toggle('seg-item-active', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+document.querySelectorAll('[data-theme-set]').forEach(b => b.addEventListener('click', () => {
+  document.documentElement.setAttribute('data-theme', b.dataset.themeSet);
+  try { localStorage.setItem('aemo-negative-prices:theme', b.dataset.themeSet); } catch (e) {}
+  syncThemeButtons();
+}));
+syncThemeButtons();
+
+// The region switch and the workbook links do not depend on the CSV: render them before it arrives.
+renderTabs();
+renderDownloads();
 
 Papa.parse('outputs/summary.csv', {
   download: true,
   header: true,
   skipEmptyLines: true,
   complete: function(results) {
-    allData = results.data;
+    allData = results.data.filter(r => r.REGIONID && r.YEAR_MONTH);
+    if (!allData.length) {
+      loadFailed('The data file has no rows',
+        `${CSV_PATH} loaded but holds no region/month rows, so there is nothing to show. It is rewritten by the data update lane; the next successful run restores it.`);
+      return;
+    }
     // Find latest month for footer
     const months = [...new Set(allData.map(r => r.YEAR_MONTH))].sort();
     const latest = months[months.length - 1];
-    document.getElementById('footer').textContent = `Data through ${formatMonth(latest)} · Updates monthly on the 16th · Source: AEMO DISPATCHPRICE via NEMOSIS`;
-    renderTabs();
+    const dot = '<span aria-hidden="true">·</span>';
+    document.getElementById('footer').innerHTML =
+      '<span>Source: AEMO DISPATCHPRICE (RRP, intervention pricing excluded) via NEMOSIS</span>' + dot +
+      `<span class="text-muted">as of ${formatMonth(latest)}</span>` + dot +
+      "<span>Checked daily; a month appears once AEMO publishes that month's archive</span>";
+    renderKpis();
     renderTable();
-    renderDownloads();
   },
   error: function() {
-    document.getElementById('loading').textContent = 'Failed to load data. Check that outputs/summary.csv exists.';
+    loadFailed('The data file did not load',
+      `This page reads ${CSV_PATH} from the same site, and that request failed, so no months can be shown. ` +
+      'On the published site the file is committed to main by the data update lane — check it is there. ' +
+      'On a local copy, serve the folder over HTTP (<code class="mono text-ink">python3 -m http.server</code>) instead of opening index.html as a file. ' +
+      'The workbook downloads below link to the repository directly.');
   }
 });
 </script>
