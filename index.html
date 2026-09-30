@@ -5,40 +5,57 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AEMO Negative Prices — NEM Daylight Hours</title>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<link rel="stylesheet" href="assets/css/app.css">
 <style>
-  :root { --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a; --text: #e0e0e0; --muted: #888; --accent: #4472C4; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
-  h1 { font-size: 1.5rem; margin-bottom: 4px; }
-  .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 20px; }
-  .tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
-  .tab { padding: 8px 18px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: 6px 6px 0 0; cursor: pointer; font-size: 0.9rem; transition: all 0.15s; }
-  .tab:hover { color: var(--text); border-color: var(--accent); }
-  .tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+  /* The heat table still carries its own rules until BRIEF step 3 moves it onto .th / .td / .seq-*.
+     Chrome, reset and typography come from assets/css/app.css (preflight is the only reset). */
+  .table-wrap { overflow-x: auto; }
   table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
-  th { background: var(--accent); color: #fff; padding: 10px 12px; text-align: center; position: sticky; top: 0; white-space: nowrap; }
+  th { background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 500; padding: 10px 12px; text-align: center; position: sticky; top: 0; white-space: nowrap; border-bottom: 1px solid var(--line); }
   th:first-child { text-align: left; }
-  td { padding: 7px 12px; text-align: center; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 7px 12px; text-align: center; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
   td:first-child { text-align: left; font-weight: 500; }
-  tr:hover td { background: rgba(68,114,196,0.08); }
-  .downloads { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
-  .dl-btn { display: inline-block; padding: 8px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--accent); text-decoration: none; font-size: 0.85rem; transition: all 0.15s; }
-  .dl-btn:hover { background: var(--accent); color: #fff; }
-  .footer { margin-top: 24px; color: var(--muted); font-size: 0.78rem; }
+  tr:hover td:first-child { background: var(--surface-2); }
   .loading { text-align: center; padding: 40px; color: var(--muted); }
 </style>
 </head>
 <body>
 
-<h1>AEMO Negative Prices</h1>
-<p class="subtitle">Percentage of daylight 5-min intervals (8am–4pm AEST) with negative dispatch prices — NEM regions, May 2019 to present</p>
+<div class="min-h-screen sm:p-2">
+<main class="min-h-[calc(100vh-1rem)] bg-canvas sm:rounded-panel sm:border sm:border-line-soft">
+<div class="mx-auto max-w-[1160px] px-4 py-6 sm:px-8 sm:py-10">
 
-<div class="tabs" id="tabs"></div>
-<div class="table-wrap"><div class="loading" id="loading">Loading data…</div><table id="table" style="display:none"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+  <header>
+    <p class="eyebrow">National Electricity Market · daylight hours</p>
+    <h1 class="mt-1.5 text-[22px] font-semibold leading-7 text-ink">AEMO Negative Prices</h1>
+    <p class="mt-1.5 max-w-[72ch] text-[13px] leading-5 text-muted">Percentage of daylight 5-min intervals (8am–4pm AEST) with negative dispatch prices — NEM regions, May 2019 to present</p>
+  </header>
 
-<div class="downloads" id="downloads"></div>
-<div class="footer" id="footer"></div>
+  <section class="card mt-6 overflow-hidden" aria-labelledby="heat-title">
+    <div class="card-head flex-wrap">
+      <div>
+        <h2 id="heat-title" class="card-title">Share of daylight intervals below each price</h2>
+        <p class="card-sub">% of 5-min dispatch intervals, 8am–4pm AEST, by month</p>
+      </div>
+      <div class="seg" id="tabs" role="tablist" aria-label="Region"></div>
+    </div>
+    <div class="table-wrap mt-4 border-t border-line-soft"><div class="loading" id="loading">Loading data…</div><table id="table" style="display:none"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+    <div class="card-foot" id="footer"></div>
+  </section>
+
+  <section class="card mt-4" aria-labelledby="dl-title">
+    <div class="card-head">
+      <div>
+        <h2 id="dl-title" class="card-title">Download the workbooks</h2>
+        <p class="card-sub">Excel · one workbook per region, plus All States</p>
+      </div>
+    </div>
+    <div class="card-body"><div class="flex flex-wrap items-center gap-2" id="downloads"></div></div>
+  </section>
+
+</div>
+</main>
+</div>
 
 <script>
 const REGIONS = {NSW1:'NSW',QLD1:'QLD',VIC1:'VIC',SA1:'SA',TAS1:'TAS'};
@@ -82,7 +99,10 @@ function renderTabs() {
   container.innerHTML = '';
   for (const [id, name] of Object.entries(REGIONS)) {
     const btn = document.createElement('button');
-    btn.className = 'tab' + (id === activeRegion ? ' active' : '');
+    btn.type = 'button';
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', id === activeRegion ? 'true' : 'false');
+    btn.className = 'seg-item' + (id === activeRegion ? ' seg-item-active' : '');
     btn.textContent = name;
     btn.onclick = () => { activeRegion = id; renderTabs(); renderTable(); };
     container.appendChild(btn);
@@ -112,11 +132,13 @@ function renderTable() {
 function renderDownloads() {
   const container = document.getElementById('downloads');
   const repoBase = 'https://github.com/cutout-z/aemo-negative-prices/raw/main/outputs/';
-  container.innerHTML = '<strong style="width:100%;margin-bottom:4px">Download Excel:&nbsp;</strong>' +
+  const icon = '<svg class="size-3.5 text-faint" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/></svg>';
+  container.innerHTML =
     Object.entries(REGIONS).map(([id, name]) =>
-      `<a class="dl-btn" href="${repoBase}${EXCEL_FILES[id]}" download>${name}</a>`
+      `<a class="btn" href="${repoBase}${EXCEL_FILES[id]}" download>${icon}${name}</a>`
     ).join('') +
-    `<a class="dl-btn" href="${repoBase}All_States_negative_prices.xlsx" download style="border-color:var(--accent);font-weight:600">All States</a>`;
+    '<span class="mx-1 h-5 w-px bg-line" aria-hidden="true"></span>' +
+    `<a class="btn" href="${repoBase}All_States_negative_prices.xlsx" download>${icon}All States</a>`;
 }
 
 Papa.parse('outputs/summary.csv', {
