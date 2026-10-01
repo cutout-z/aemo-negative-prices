@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Behaviour check for the AEMO Negative Prices page — every interaction a design pass must NOT lose.
 
-    cd ~/Design/"AEMO Negative Prices" && python3 -m http.server 9360 --bind 127.0.0.1 &
+    cd ~/Design/"AEMO Negative Prices" && python3 -m http.server 9382 --bind 127.0.0.1 &
     /opt/anaconda3/bin/python3 scripts/verify-interactions.py
 
 Green TODAY, on the unstyled page, and it must still be green at handback: it tests what the page
@@ -17,7 +17,7 @@ import sys
 from playwright.sync_api import sync_playwright
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-URL = "http://127.0.0.1:9360/index.html"
+URL = "http://127.0.0.1:9382/index.html"
 CSV = ROOT / "outputs" / "summary.csv"
 REGIONS = {"NSW": "NSW1", "QLD": "QLD1", "VIC": "VIC1", "SA": "SA1", "TAS": "TAS1"}
 THRESHOLDS = ["0", "neg10", "neg20", "neg30", "neg40", "neg50", "neg60", "neg70", "neg80"]

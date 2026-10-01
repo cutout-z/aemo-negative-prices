@@ -198,6 +198,12 @@
   .skeleton { @apply rounded-md bg-surface-3; animation: pulse-soft 1.6s ease-in-out infinite; }
   @keyframes pulse-soft { 50% { opacity: .55; } }
   @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+  /* Shell-only placeholders: the served HTML reserves the layout the data is about to fill (the
+     .badge chips in the table card head, and the skeleton bars standing in for download-button
+     labels). The JS replaces both with real content, so no inline colour is needed here and the
+     light/dark flip still comes from the tokens. */
+  .skeleton-inline { background: currentColor; opacity: .25; }
+  .placeholder-badges .skeleton-inline { background: var(--surface-3); opacity: 1; }
 
   .picked { @apply inline-flex h-5 items-center gap-1 rounded-md bg-accent-wash px-1.5 text-[11px] font-semibold text-accent; }
   .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

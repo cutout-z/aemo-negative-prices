@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render + token check for the AEMO Negative Prices page — the gate this pass must leave green.
 
-    cd ~/Design/"AEMO Negative Prices" && python3 -m http.server 9360 --bind 127.0.0.1 &
+    cd ~/Design/"AEMO Negative Prices" && python3 -m http.server 9382 --bind 127.0.0.1 &
     /opt/anaconda3/bin/python3 scripts/verify-design.py            # checks only
     /opt/anaconda3/bin/python3 scripts/verify-design.py --screens  # + design/screens/after-*.png
 
@@ -22,7 +22,7 @@ import sys
 from playwright.sync_api import sync_playwright
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-URL = "http://127.0.0.1:9360/index.html"
+URL = "http://127.0.0.1:9382/index.html"
 SCREENS = ROOT / "design" / "screens"
 TOKEN_SRC = ROOT / "assets" / "css" / "tailwind.src.css"
 PAGE = ROOT / "index.html"
@@ -120,6 +120,33 @@ def main() -> int:
                   f"{card_bg} vs {rgb(dark['surface'])}")
 
         print("shell")
+        # The served shell must reserve the layout the app is about to fill. Everything below the
+        # skeleton is shoved down the screen when the data lands, so measure the two states the
+        # browser actually paints: the HTML with JS DISABLED (exactly what arrives first — the
+        # app cannot have run) and the loaded page. JS off also makes the comparison deterministic:
+        # no race with the CSV fetch.
+        ctx = br.new_context(java_script_enabled=False, viewport={"width": 1440, "height": 900})
+        shell_pg = ctx.new_page()
+        shell_pg.goto(URL, wait_until="load", timeout=60000)
+        shell_pg.wait_for_timeout(300)
+        shell_h = shell_pg.evaluate("document.documentElement.scrollHeight")
+        n_bars = shell_pg.eval_on_selector_all(
+            ".skeleton, .skeleton-inline",
+            "e => e.filter(x => x.getBoundingClientRect().height > 0).length")
+        n_bars_card = shell_pg.eval_on_selector_all(
+            "#table-state .skeleton, #table-state .skeleton-inline",
+            "e => e.filter(x => x.getBoundingClientRect().height > 0).length")
+        ctx.close()
+        loaded_h = pg.evaluate("document.documentElement.scrollHeight")
+        jump = abs(loaded_h - shell_h)
+        check(shell_h > 0 and jump <= 0.20 * loaded_h,
+              "the served shell reserves the loaded layout (|shell - loaded| <= 20%)",
+              f"shell {shell_h}px vs loaded {loaded_h}px = {jump}px ({jump / loaded_h * 100:.1f}%)")
+        check(n_bars >= 15, "the served shell renders real skeleton bars (>= 15)",
+              f"{n_bars} visible bars")
+        check(n_bars_card >= 3, "the table card's skeleton stands in for the table (>= 3 rows)",
+              f"{n_bars_card} bars inside #table-state")
+
         n_kpi = pg.eval_on_selector_all(".kpi-value", "e => e.length")
         kpi_text = pg.eval_on_selector_all(
             ".kpi-value", "e => e.map(x => (x.innerText||'').trim()).filter(Boolean)")
@@ -177,6 +204,24 @@ def main() -> int:
               "6 Excel downloads are wired (5 regions + All States)", f"{dl}")
 
         print("themes and phone")
+        # Sticky chrome must stay ONE row: pinned chrome taller than 72px covers the thing it is
+        # meant to label. The page has no page-level sticky/filter bar (measured: #tabs and the
+        # theme .seg are `static` at every width) — the only sticky chrome is the table's own
+        # header and first column, so that is what this pins.
+        sticky = pg.evaluate("""() => {
+            const out = [];
+            for (const el of document.querySelectorAll('*')) {
+                const cs = getComputedStyle(el);
+                if (cs.position !== 'sticky' && cs.position !== 'fixed') continue;
+                out.push({sel: el.tagName.toLowerCase() + (el.id ? '#' + el.id : ''),
+                          cls: (el.className || '').toString(), h: el.getBoundingClientRect().height});
+            }
+            return out; }""")
+        tall = [s for s in sticky if s["h"] > 72]
+        check(not tall, "sticky chrome is one row at 1440px (nothing pinned is taller than 72px)",
+              f"{len(sticky)} sticky element(s), tallest {max([s['h'] for s in sticky], default=0):.0f}px"
+              + (f" — {tall[:2]}" if tall else " (the table's .th header and its pinned month column)"))
+
         flip = pg.evaluate("""(() => {
             const r = document.documentElement, before = getComputedStyle(document.body).backgroundColor;
             r.setAttribute('data-theme','light');
@@ -205,6 +250,22 @@ def main() -> int:
         check(bool(st) and max(s["h"] for s in st) > 0,
               "a missing data file renders a VISIBLE .state panel, not a bare error string",
               f"{len(st)} .state element(s), tallest {max([s['h'] for s in st], default=0):.0f}px")
+
+        # The skeleton wrapper the app empties is also the DOM-contract hook the next agent depends
+        # on: it must survive the load (hidden, not deleted) and it must keep a truthful busy state.
+        wrap_state = pg.evaluate("""() => {
+            const el = document.getElementById('table-state');
+            if (!el) return null;
+            return {display: getComputedStyle(el).display, busy: el.getAttribute('aria-busy'),
+                    skeletons: el.querySelectorAll('.skeleton, .skeleton-inline').length}; }""")
+        check(wrap_state is not None and wrap_state["display"] == "none",
+              "#table-state survives the load (hidden, not removed)",
+              f"{wrap_state}")
+        check(wrap_state is not None and wrap_state["busy"] == "false",
+              "#table-state clears aria-busy once the data has landed", f"{wrap_state}")
+        check(pg.eval_on_selector_all(".placeholder-badges", "e => e.length") == 0,
+              "the shell's placeholder badges are replaced by real counts after load",
+              "placeholder-badges still on the page")
 
         check(not errors, "no JS errors on load", "; ".join(errors[:3]))
 
