@@ -41,10 +41,10 @@
       </div>
     </div>
     <div class="mt-4 grid grid-cols-2 gap-px border-t border-line-soft bg-line-soft lg:grid-cols-4" id="kpis" aria-live="polite">
-      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div></div>
-      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div></div>
-      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div></div>
-      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div></div>
+      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div><div class="skeleton mt-2 h-3 w-28"></div></div>
+      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div><div class="skeleton mt-2 h-3 w-28"></div></div>
+      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div><div class="skeleton mt-2 h-3 w-28"></div></div>
+      <div class="bg-surface px-5 py-4"><div class="skeleton h-8 w-24"></div><div class="skeleton mt-2 h-3 w-32"></div><div class="skeleton mt-2 h-3 w-28"></div></div>
     </div>
   </section>
 
@@ -55,7 +55,18 @@
         <p class="card-sub" id="dl-sub">Excel · one workbook per region, plus All States</p>
       </div>
     </div>
-    <div class="card-body"><div class="flex flex-wrap items-center gap-2" id="downloads"></div></div>
+    <div class="card-body">
+      <div class="flex flex-wrap items-center gap-2" id="downloads">
+        <a class="btn btn-primary" href="https://github.com/cutout-z/aemo-negative-prices/raw/main/outputs/SA_negative_prices.xlsx" download><span class="skeleton-inline size-3.5"></span><span class="skeleton-inline h-3 w-24"></span></a>
+        <a class="btn" href="https://github.com/cutout-z/aemo-negative-prices/raw/main/outputs/All_States_negative_prices.xlsx" download><span class="skeleton-inline size-3.5"></span><span class="skeleton-inline h-3 w-16"></span></a>
+        <span class="mx-1 hidden h-5 w-px bg-line sm:inline-block" aria-hidden="true"></span>
+        <span class="eyebrow ml-1 mr-0.5 w-full sm:ml-0 sm:w-auto">Other regions</span>
+        <a class="btn btn-ghost" href="https://github.com/cutout-z/aemo-negative-prices/raw/main/outputs/NSW_negative_prices.xlsx" download><span class="skeleton-inline size-3.5"></span><span class="skeleton-inline h-3 w-8"></span></a>
+        <a class="btn btn-ghost" href="https://github.com/cutout-z/aemo-negative-prices/raw/main/outputs/QLD_negative_prices.xlsx" download><span class="skeleton-inline size-3.5"></span><span class="skeleton-inline h-3 w-8"></span></a>
+        <a class="btn btn-ghost" href="https://github.com/cutout-z/aemo-negative-prices/raw/main/outputs/VIC_negative_prices.xlsx" download><span class="skeleton-inline size-3.5"></span><span class="skeleton-inline h-3 w-8"></span></a>
+        <a class="btn btn-ghost" href="https://github.com/cutout-z/aemo-negative-prices/raw/main/outputs/TAS_negative_prices.xlsx" download><span class="skeleton-inline size-3.5"></span><span class="skeleton-inline h-3 w-8"></span></a>
+      </div>
+    </div>
   </section>
 
   <section class="card mt-4 overflow-hidden" aria-labelledby="heat-title">
@@ -63,9 +74,19 @@
       <div class="min-w-0 flex-1 basis-80">
         <h2 id="heat-title" class="card-title">Share of daylight intervals below each price</h2>
         <p class="card-sub">% of each month's daylight 5-min intervals (8am–4pm AEST) with a regional price below the column's threshold, $/MWh · latest month at the bottom</p>
-        <div class="mt-2.5 flex flex-wrap gap-1.5" id="badges"></div>
+        <div class="placeholder-badges mt-2.5 flex flex-wrap gap-1.5" id="badges">
+          <span class="badge"><span class="skeleton-inline h-2.5 w-10"></span></span>
+          <span class="badge"><span class="skeleton-inline h-2.5 w-20"></span></span>
+          <span class="badge"><span class="skeleton-inline h-2.5 w-14"></span></span>
+        </div>
       </div>
-      <div class="seg" id="tabs" role="tablist" aria-label="Region"></div>
+      <div class="seg" id="tabs" role="tablist" aria-label="Region">
+        <button type="button" class="seg-item max-sm:h-8 max-sm:px-3" disabled><span class="skeleton h-2.5 w-6"></span></button>
+        <button type="button" class="seg-item max-sm:h-8 max-sm:px-3" disabled><span class="skeleton h-2.5 w-6"></span></button>
+        <button type="button" class="seg-item max-sm:h-8 max-sm:px-3" disabled><span class="skeleton h-2.5 w-6"></span></button>
+        <button type="button" class="seg-item max-sm:h-8 max-sm:px-3" disabled><span class="skeleton h-2.5 w-6"></span></button>
+        <button type="button" class="seg-item max-sm:h-8 max-sm:px-3" disabled><span class="skeleton h-2.5 w-6"></span></button>
+      </div>
     </div>
     <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 pt-4" data-heat-legend>
       <span class="eyebrow">Scale</span>
@@ -81,7 +102,7 @@
       </ol>
       <span class="text-[12px] leading-4 text-faint">→ more of the month's daylight below the price · each range includes its lower bound</span>
     </div>
-    <div class="table-wrap mt-4 max-h-[min(72vh,760px)] overflow-auto border-t border-line-soft"><div id="table-state"><div class="space-y-2.5 px-5 py-5" role="status" aria-label="Loading data"><div class="skeleton h-4 w-full"></div><div class="skeleton h-4 w-full"></div><div class="skeleton h-4 w-11/12"></div><div class="skeleton h-4 w-full"></div><div class="skeleton h-4 w-10/12"></div><div class="skeleton h-4 w-full"></div></div></div><table id="table" class="w-full border-separate border-spacing-0" style="display:none"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+    <div class="table-wrap mt-4 max-h-[min(72vh,760px)] sm:min-h-[min(60vh,648px)] overflow-auto border-t border-line-soft"><div id="table-state" aria-busy="true"><div class="px-5 py-5" role="status" aria-label="Loading data"><div class="skeleton h-9 w-full"></div><div class="mt-3 space-y-2.5"><div class="skeleton h-8 w-full"></div><div class="skeleton h-8 w-full"></div><div class="skeleton h-8 w-11/12"></div><div class="skeleton h-8 w-full"></div><div class="skeleton h-8 w-10/12"></div><div class="skeleton h-8 w-full"></div><div class="skeleton h-8 w-full"></div><div class="skeleton h-8 w-11/12"></div><div class="skeleton h-8 w-full"></div></div></div></div><table id="table" class="w-full border-separate border-spacing-0" style="display:none"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
     <div class="card-foot" id="footer"><span>Source: AEMO DISPATCHPRICE (RRP, intervention pricing excluded) via NEMOSIS</span><span aria-hidden="true">·</span><span>as of: loading…</span></div>
   </section>
 
@@ -132,6 +153,9 @@ function tableState(html) {
   const box = document.getElementById('table-state');
   box.innerHTML = html;
   box.style.display = html ? '' : 'none';
+  // The wrapper is the element the app empties when the data lands: keep its busy state truthful
+  // for assistive tech (the served shell ships aria-busy="true" with the loading skeleton inside).
+  box.setAttribute('aria-busy', html ? 'true' : 'false');
   document.getElementById('table').style.display = html ? 'none' : '';
 }
 const CSV_PATH = '<code class="mono text-ink">outputs/summary.csv</code>';
@@ -268,6 +292,9 @@ function renderTable() {
 // Counts the page already knows, for the active region: rows (months) and their span.
 function renderBadges(rows) {
   const box = document.getElementById('badges');
+  // The served shell carries placeholder .badge chips so the card head reserves its loaded height;
+  // they go the moment the real counts exist.
+  box.classList.remove('placeholder-badges');
   if (!rows.length) { box.innerHTML = ''; return; }
   box.innerHTML =
     `<span class="badge num">${rows.length} months</span>` +
