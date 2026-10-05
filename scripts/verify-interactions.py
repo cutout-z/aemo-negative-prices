@@ -90,8 +90,9 @@ def expected_kpis(region: str) -> list[list[str]]:
                default=-1)
     if deep >= 0:
         hits = [r for r in reg if int(r[f"count_below_{THRESHOLDS[deep]}"]) > 0]
-        t3 = [TH_LABELS[deep], "Deepest threshold crossed",
-              f"last in {label(hits[-1]['YEAR_MONTH'])} · {len(hits)} of {len(reg)} months"]
+        where = "the deepest threshold tracked" if deep == len(THRESHOLDS) - 1 else "the deepest this region has reached"
+        t3 = [f"{len(hits)} of {len(reg)}", f"Months with prices {TH_LABELS[deep]}",
+              f"last in {label(hits[-1]['YEAR_MONTH'])} · {where}"]
     else:
         t3 = ["None", "Deepest threshold crossed", f"no interval below $0 in {len(reg)} months"]
 

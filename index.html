@@ -219,15 +219,18 @@ function renderKpis() {
     t2 = kpiTile('N/A', `Below $0 · ${formatMonth(prevMonth)}`, 'no row for this month in the data');
   }
 
-  // 3. the deepest threshold this region has ever crossed, and when
+  // 3. how often this region reaches the deepest threshold it has crossed. Every region has crossed
+  // −$80, the deepest one tracked, so naming the threshold alone said the same thing five times; the
+  // count of months is what differs (SA most months, TAS fewest).
   let deep = -1;
   THRESHOLDS.forEach((t, i) => { if (rows.some(r => parseInt(r[`count_below_${t}`]) > 0)) deep = i; });
   let t3;
   if (deep >= 0) {
     const t = THRESHOLDS[deep];
     const hits = rows.filter(r => parseInt(r[`count_below_${t}`]) > 0);
-    t3 = kpiTile(TH_LABELS[deep], 'Deepest threshold crossed',
-      `last in ${formatMonth(hits[hits.length - 1].YEAR_MONTH)} · ${hits.length} of ${rows.length} months`);
+    const where = deep === THRESHOLDS.length - 1 ? 'the deepest threshold tracked' : 'the deepest this region has reached';
+    t3 = kpiTile(`${hits.length} of ${rows.length}`, `Months with prices ${TH_LABELS[deep]}`,
+      `last in ${formatMonth(hits[hits.length - 1].YEAR_MONTH)} · ${where}`);
   } else {
     t3 = kpiTile('None', 'Deepest threshold crossed', `no interval below $0 in ${rows.length} months`);
   }
