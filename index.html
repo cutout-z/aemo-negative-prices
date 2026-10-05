@@ -101,6 +101,7 @@
         <li class="seq-7 num px-2 py-1 text-center text-[12px] font-medium">50–100%</li>
       </ol>
       <span class="text-[12px] leading-4 text-faint">→ more of the month's daylight below the price · each range includes its lower bound</span>
+      <span class="text-[12px] leading-4 text-faint" data-5ms-note><span class="badge mr-1 h-[18px] px-1.5">5MS</span>Oct 2021, when five-minute settlement started. Earlier months count 5-min dispatch prices, but generators were paid the 30-min trading price.</span>
     </div>
     <div class="table-wrap mt-4 max-h-[min(72vh,760px)] sm:min-h-[min(60vh,648px)] overflow-auto border-t border-line-soft"><div id="table-state" aria-busy="true"><div class="px-5 py-5" role="status" aria-label="Loading data"><div class="skeleton h-9 w-full"></div><div class="mt-3 space-y-2.5"><div class="skeleton h-8 w-full"></div><div class="skeleton h-8 w-full"></div><div class="skeleton h-8 w-11/12"></div><div class="skeleton h-8 w-full"></div><div class="skeleton h-8 w-10/12"></div><div class="skeleton h-8 w-full"></div><div class="skeleton h-8 w-full"></div><div class="skeleton h-8 w-11/12"></div><div class="skeleton h-8 w-full"></div></div></div></div><table id="table" class="w-full border-separate border-spacing-0" style="display:none"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
     <div class="card-foot" id="footer"><span>Source: AEMO DISPATCHPRICE (RRP from the pricing run; intervention-run rows excluded) via NEMOSIS</span><span aria-hidden="true">·</span><span>as of: loading…</span></div>
@@ -263,6 +264,12 @@ function renderTabs() {
   }
 }
 
+// 1 Oct 2021: five-minute settlement. From here generators are paid the 5-min price this table
+// counts; before it they were paid the 30-min trading price (the mean of six dispatch prices), so the
+// earlier shares count prices that were never paid as such and can differ a lot from the paid share.
+const FIVE_MIN_START = '2021-10';
+const FIVE_MIN_NOTE = 'Five-minute settlement started 1 Oct 2021. Earlier months count 5-min dispatch prices, but generators were paid the 30-min trading price.';
+
 function renderTable() {
   const thead = document.getElementById('thead');
   const tbody = document.getElementById('tbody');
@@ -283,7 +290,9 @@ function renderTable() {
       if (isNaN(val)) return '<td class="td-num whitespace-nowrap text-faint">N/A</td>';
       return `<td class="td-num seq-${heatStep(val)} whitespace-nowrap border-l border-l-surface border-b-surface">${val.toFixed(2)}%</td>`;
     }).join('');
-    return `<tr class="group"><th class="td sticky left-0 z-[1] whitespace-nowrap border-r border-r-line bg-surface text-left font-medium text-ink group-hover:bg-surface-2" scope="row">${formatMonth(row.YEAR_MONTH)}</th>${cells}</tr>`;
+    const mark = row.YEAR_MONTH === FIVE_MIN_START
+      ? ` <span class="badge ml-1 h-[18px] px-1.5" title="${FIVE_MIN_NOTE}" data-5ms>5MS</span>` : '';
+    return `<tr class="group" data-month="${row.YEAR_MONTH}"><th class="td sticky left-0 z-[1] whitespace-nowrap border-r border-r-line bg-surface text-left font-medium text-ink group-hover:bg-surface-2" scope="row">${formatMonth(row.YEAR_MONTH)}${mark}</th>${cells}</tr>`;
   }).join('');
 
   tableState('');

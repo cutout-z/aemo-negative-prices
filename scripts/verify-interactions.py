@@ -148,10 +148,14 @@ with sync_playwright() as pw:
     for name, region in REGIONS.items():
         click_tab(pg, name)
         reg = region_rows(region)
+        # Rows are keyed by their data-month, not the month cell's text: Oct 2021 carries a 5MS marker.
         table = pg.eval_on_selector_all(
-            "#tbody tr", "rows => rows.map(r => [...r.children].map(c => c.innerText.trim()))")
-        by_month = {r[0]: r[1:] for r in table}
+            "#tbody tr", "rows => rows.map(r => [r.dataset.month, ...[...r.children].slice(1).map(c => c.innerText.trim())])")
+        by_month = {label(r[0]): r[1:] for r in table if r[0]}
         want = {label(r["YEAR_MONTH"]): [pct2(r["pct_below_" + t]) for t in THRESHOLDS] for r in reg}
+        marked = pg.eval_on_selector_all("#tbody tr", "rows => rows.filter(r => r.querySelector('[data-5ms]')).map(r => r.dataset.month)")
+        want_mark = ["2021-10"] if any(r["YEAR_MONTH"] == "2021-10" for r in reg) else []
+        check(marked == want_mark, f"{name}: the five-minute settlement start is marked on Oct 2021 only", f"{marked}")
         missing = [m for m in want if m not in by_month]
         extra = [m for m in by_month if m not in want]
         mismatched = [(m, by_month[m], want[m]) for m in want if m in by_month and by_month[m] != want[m]]
@@ -169,9 +173,11 @@ with sync_playwright() as pw:
         want_b = [f"{len(reg)} months", f"{label(reg[0]['YEAR_MONTH'])} – {label(reg[-1]['YEAR_MONTH'])}",
                   f"{len(THRESHOLDS)} thresholds"]
         check(badges == want_b, f"{name}: the table badges state the csv's span", f"{badges} vs {want_b}")
+    note = pg.inner_text("[data-5ms-note]") if pg.query_selector("[data-5ms-note]") else ""
+    check("30-min" in note and "Oct 2021" in note, "the 5MS marker is explained on screen", note[:80])
     click_tab(pg, "VIC")
     table = pg.eval_on_selector_all(
-        "#tbody tr", "rows => rows.map(r => [...r.children].map(c => c.innerText.trim()))")
+        "#tbody tr", "rows => rows.map(r => [r.dataset.month, ...[...r.children].slice(1).map(c => c.innerText.trim())])")
 
     print("table shape")
     heads = pg.eval_on_selector_all("#thead th", "e => e.map(x => x.innerText.trim())")
