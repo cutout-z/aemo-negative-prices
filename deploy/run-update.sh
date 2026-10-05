@@ -8,6 +8,8 @@ RUN_TESTS="${RUN_TESTS:-1}"
 PUSH_CHANGES="${PUSH_CHANGES:-1}"
 RUN_RAW_CACHE_PRUNE="${RUN_RAW_CACHE_PRUNE:-1}"
 COMMIT_MESSAGE_PREFIX="${COMMIT_MESSAGE_PREFIX:-Update negative price analysis}"
+# Set only for a deliberate, audited rewrite of settled months; recorded in the commit.
+HISTORY_REWRITE_REASON="${HISTORY_REWRITE_REASON:-}"
 
 cd "${APP_DIR}"
 
@@ -17,10 +19,21 @@ if ! git pull --ff-only origin main; then
   echo "origin/main is not fast-forwardable (rewritten?) — resetting onto it."
   git reset --hard origin/main
 fi
+# Baseline = the COMMITTED summary, not the working tree (which a failed or
+# manual run may have left modified). Both the settled-history guard and the
+# "did anything change" check below compare against it.
 before_summary="$(mktemp)"
-cp outputs/summary.csv "${before_summary}" 2>/dev/null || true
+git show HEAD:outputs/summary.csv > "${before_summary}" 2>/dev/null || : > "${before_summary}"
 
-"${PYTHON}" -m src.main ${PIPELINE_ARGS}
+pipeline_extra=()
+if [[ -s "${before_summary}" ]]; then
+  pipeline_extra+=(--baseline "${before_summary}")
+fi
+if [[ -n "${HISTORY_REWRITE_REASON}" ]]; then
+  pipeline_extra+=(--allow-history-rewrite "${HISTORY_REWRITE_REASON}")
+fi
+
+"${PYTHON}" -m src.main ${PIPELINE_ARGS} ${pipeline_extra[@]+"${pipeline_extra[@]}"}
 
 if [[ "${RUN_TESTS}" == "1" ]]; then
   "${PYTHON}" tests/validate_outputs.py
@@ -47,7 +60,14 @@ fi
 
 git config user.name "${GIT_AUTHOR_NAME:-aemo-nas-bot}"
 git config user.email "${GIT_AUTHOR_EMAIL:-aemo-nas-bot@users.noreply.github.com}"
-git commit -m "${COMMIT_MESSAGE_PREFIX} $(date -u +%Y-%m)"
+# Label with the latest DATA month in the summary, not the run month.
+data_month="$(awk -F, 'NR == 1 { for (i = 1; i <= NF; i++) if ($i == "YEAR_MONTH") c = i; next }
+  c && $c > m { m = $c } END { print m }' outputs/summary.csv)"
+commit_args=(-m "${COMMIT_MESSAGE_PREFIX} ${data_month:-$(date -u +%Y-%m)}")
+if [[ -n "${HISTORY_REWRITE_REASON}" ]]; then
+  commit_args+=(-m "History rewrite: ${HISTORY_REWRITE_REASON}")
+fi
+git commit "${commit_args[@]}"
 
 if [[ "${PUSH_CHANGES}" == "1" ]]; then
   git push origin main

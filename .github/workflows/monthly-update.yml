@@ -10,6 +10,11 @@ on:
         required: false
         default: 'false'
         type: boolean
+      history_rewrite_reason:
+        description: 'Reason for changing settled months (required when a full refresh changes history)'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
@@ -35,17 +40,24 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run analysis
+        env:
+          HISTORY_REWRITE_REASON: ${{ inputs.history_rewrite_reason }}
         run: |
+          args=()
           if [ "${{ inputs.full_refresh }}" = "true" ]; then
-            python -m src.main --full-refresh
-          else
-            python -m src.main
+            args+=(--full-refresh)
           fi
+          if [ -n "${HISTORY_REWRITE_REASON}" ]; then
+            args+=(--allow-history-rewrite "${HISTORY_REWRITE_REASON}")
+          fi
+          python -m src.main "${args[@]}"
 
       - name: Validate outputs
         run: python tests/validate_outputs.py
 
       - name: Commit and push updated outputs
+        env:
+          HISTORY_REWRITE_REASON: ${{ inputs.history_rewrite_reason }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -53,7 +65,14 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Update negative price analysis $(date +%Y-%m)"
+            data_month="$(awk -F, 'NR == 1 { for (i = 1; i <= NF; i++) if ($i == "YEAR_MONTH") c = i; next }
+              c && $c > m { m = $c } END { print m }' outputs/summary.csv)"
+            subject="Update negative price analysis ${data_month:-$(date +%Y-%m)}"
+            if [ -n "${HISTORY_REWRITE_REASON}" ]; then
+              git commit -m "${subject}" -m "History rewrite: ${HISTORY_REWRITE_REASON}"
+            else
+              git commit -m "${subject}"
+            fi
             git push
           fi
 

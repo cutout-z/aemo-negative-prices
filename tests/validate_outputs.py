@@ -2,9 +2,19 @@
 
 Checks summary.csv and regional Excel workbooks for data integrity
 before committing to the repository. Exits non-zero on any failure.
+
+Usage: python tests/validate_outputs.py [--outputs-dir DIR]
+
+Every check is exact: a region-month must have exactly days x 96 daylight
+intervals, every percentage must equal round(count / total * 100, 2) (the
+pipeline's formula), and the months must form one gap-free run from May 2019
+to the latest complete month, identical for all five regions.
 """
 
+import argparse
+import calendar
 import sys
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -13,83 +23,159 @@ OUTPUTS_DIR = Path(__file__).parent.parent / "outputs"
 REGIONS = ["NSW1", "QLD1", "VIC1", "SA1", "TAS1"]
 THRESHOLDS = ["0", "neg10", "neg20", "neg30", "neg40", "neg50", "neg60", "neg70", "neg80"]
 REGION_NAMES = {"NSW1": "NSW", "QLD1": "QLD", "VIC1": "VIC", "SA1": "SA", "TAS1": "TAS"}
-
-errors = []
-
-
-def check(condition, msg):
-    if not condition:
-        errors.append(msg)
-        print(f"  FAIL: {msg}")
-    return condition
+START_MONTH = "2019-05"
+INTERVALS_PER_DAY = 96  # 08:00-16:00 interval starts, 12 five-minute intervals an hour
 
 
-def validate():
-    summary_path = OUTPUTS_DIR / "summary.csv"
-    check(summary_path.exists(), "summary.csv does not exist")
-    if not summary_path.exists():
-        return
+def _sample(frame: pd.DataFrame, limit: int = 5) -> str:
+    keys = [f"{r.REGIONID} {r.YEAR_MONTH}" for r in frame.head(limit).itertuples()]
+    more = f" (+{len(frame) - limit} more)" if len(frame) > limit else ""
+    return ", ".join(keys) + more
 
-    df = pd.read_csv(summary_path)
-    print(f"summary.csv: {len(df)} rows")
+
+def validate_summary(df: pd.DataFrame, today: date | None = None) -> list[str]:
+    """Return a list of integrity errors in a summary.csv DataFrame (empty = valid)."""
+    today = today or date.today()
+    errors: list[str] = []
+
+    def check(condition, msg):
+        if not condition:
+            errors.append(msg)
+            print(f"  FAIL: {msg}")
+        return condition
 
     # --- Structure ---
-    check(len(df) > 0, "summary.csv is empty")
-    check("REGIONID" in df.columns, "Missing REGIONID column")
-    check("YEAR_MONTH" in df.columns, "Missing YEAR_MONTH column")
+    if not check(len(df) > 0, "summary.csv is empty"):
+        return errors
+    count_cols = [f"count_below_{t}" for t in THRESHOLDS]
+    pct_cols = [f"pct_below_{t}" for t in THRESHOLDS]
+    required = ["REGIONID", "YEAR_MONTH", "total_daylight_intervals", *count_cols, *pct_cols]
+    missing = [c for c in required if c not in df.columns]
+    if not check(not missing, f"Missing columns: {missing}"):
+        return errors
+    nulls = df[required].isna().any(axis=1)
+    if not check(not nulls.any(), f"{nulls.sum()} rows have empty cells: {_sample(df[nulls])}"):
+        return errors
 
-    # --- All 5 regions present ---
+    # --- Exactly the 5 regions ---
     regions_present = set(df["REGIONID"].unique())
     for r in REGIONS:
         check(r in regions_present, f"Region {r} missing from summary.csv")
+    extra = sorted(regions_present - set(REGIONS))
+    check(not extra, f"Unexpected regions in summary.csv: {extra}")
 
-    # --- Interval counts in expected range (daylight hours: 2600-3100) ---
-    if "total_daylight_intervals" in df.columns:
-        bad_intervals = df[
-            (df["total_daylight_intervals"] < 2500) | (df["total_daylight_intervals"] > 3200)
+    # --- Month labels ---
+    periods = pd.to_datetime(df["YEAR_MONTH"], format="%Y-%m", errors="coerce")
+    bad_labels = periods.isna()
+    if not check(not bad_labels.any(), f"Malformed YEAR_MONTH in {_sample(df[bad_labels])}"):
+        return errors
+    months = periods.dt.to_period("M")
+
+    # --- No duplicate region/month combinations ---
+    dupes = df.duplicated(subset=["REGIONID", "YEAR_MONTH"], keep=False)
+    check(dupes.sum() == 0, f"{dupes.sum()} duplicate region/month rows: {_sample(df[dupes])}")
+
+    # --- Interval totals: exactly days_in_month x 96 ---
+    expected_total = months.map(lambda p: calendar.monthrange(p.year, p.month)[1] * INTERVALS_PER_DAY)
+    wrong_total = df["total_daylight_intervals"] != expected_total
+    check(
+        not wrong_total.any(),
+        f"{wrong_total.sum()} rows have total_daylight_intervals != days_in_month x "
+        f"{INTERVALS_PER_DAY}: {_sample(df[wrong_total])}",
+    )
+
+    total = df["total_daylight_intervals"]
+    for c_col, p_col in zip(count_cols, pct_cols):
+        # --- 0 <= count <= total ---
+        bad = (df[c_col] < 0) | (df[c_col] > total)
+        check(not bad.any(), f"{c_col} outside [0, total] in {bad.sum()} rows: {_sample(df[bad])}")
+
+        # --- pct == round(count / total * 100, 2), compared exactly ---
+        expected_pct = [
+            round(c / t * 100, 2) if t > 0 else 0.0 for c, t in zip(df[c_col], total)
         ]
+        bad = df[p_col] != pd.Series(expected_pct, index=df.index)
         check(
-            len(bad_intervals) == 0,
-            f"{len(bad_intervals)} rows have interval counts outside [2500, 3200]",
+            not bad.any(),
+            f"{p_col} != round({c_col} / total * 100, 2) in {bad.sum()} rows: {_sample(df[bad])}",
         )
 
-    # --- Percentages in [0, 100] ---
-    pct_cols = [c for c in df.columns if c.startswith("pct_below_")]
-    for col in pct_cols:
-        vals = df[col].dropna()
-        check(vals.min() >= 0, f"{col} has negative values (min={vals.min():.2f})")
-        check(vals.max() <= 100, f"{col} exceeds 100% (max={vals.max():.2f})")
-
-    # --- Threshold ordering: count_below_0 >= count_below_neg10 >= ... ---
-    count_cols = [f"count_below_{t}" for t in THRESHOLDS if f"count_below_{t}" in df.columns]
-    if len(count_cols) >= 2:
-        for i in range(len(count_cols) - 1):
-            violations = df[df[count_cols[i]] < df[count_cols[i + 1]]]
+    # --- Thresholds cumulative: count/pct non-increasing as the threshold deepens ---
+    for cols in (count_cols, pct_cols):
+        for shallow, deep in zip(cols, cols[1:]):
+            bad = df[shallow] < df[deep]
             check(
-                len(violations) == 0,
-                f"Threshold ordering violated: {count_cols[i]} < {count_cols[i+1]} in {len(violations)} rows",
+                not bad.any(),
+                f"Threshold ordering violated: {shallow} < {deep} in {bad.sum()} rows: {_sample(df[bad])}",
             )
 
+    # --- Months: contiguous from START_MONTH per region, same set for every region ---
+    by_region = {r: set(months[df["REGIONID"] == r]) for r in REGIONS if r in regions_present}
+    start = pd.Period(START_MONTH, freq="M")
+    for region, region_months in by_region.items():
+        first, last = min(region_months), max(region_months)
+        check(first == start, f"{region} starts at {first}, expected {start}")
+        gaps = sorted(set(pd.period_range(first, last, freq="M")) - region_months)
+        check(not gaps, f"{region} has {len(gaps)} missing months: {[str(p) for p in gaps[:12]]}")
+    if by_region:
+        union = set().union(*by_region.values())
+        for region, region_months in by_region.items():
+            absent = sorted(union - region_months)
+            check(not absent, f"{region} lacks months other regions have: {[str(p) for p in absent[:12]]}")
+
+    # --- Latest month is complete: strictly before the current month ---
+    latest = months.max()
+    current = pd.Period(today, freq="M")
+    check(latest < current, f"Latest month {latest} is not a complete past month (today {today})")
+
+    return errors
+
+
+def validate(outputs_dir: Path = OUTPUTS_DIR, today: date | None = None) -> list[str]:
+    """Validate summary.csv and the six workbooks in outputs_dir. Returns errors."""
+    outputs_dir = Path(outputs_dir)
+    errors: list[str] = []
+
+    def check(condition, msg):
+        if not condition:
+            errors.append(msg)
+            print(f"  FAIL: {msg}")
+        return condition
+
+    summary_path = outputs_dir / "summary.csv"
+    if not check(summary_path.exists(), "summary.csv does not exist"):
+        return errors
+
+    # round_trip: parse each pct exactly as written, so the equality check is exact
+    df = pd.read_csv(summary_path, float_precision="round_trip")
+    print(f"summary.csv: {len(df)} rows")
+    errors.extend(validate_summary(df, today=today))
+
     # --- Regional Excel workbooks exist ---
-    for region_id, name in REGION_NAMES.items():
-        xlsx_path = OUTPUTS_DIR / f"{name}_negative_prices.xlsx"
+    for name in REGION_NAMES.values():
+        xlsx_path = outputs_dir / f"{name}_negative_prices.xlsx"
         check(xlsx_path.exists(), f"{xlsx_path.name} does not exist")
 
     # --- All-states workbook exists ---
-    all_states_path = OUTPUTS_DIR / "All_States_negative_prices.xlsx"
+    all_states_path = outputs_dir / "All_States_negative_prices.xlsx"
     check(all_states_path.exists(), "All_States_negative_prices.xlsx does not exist")
 
-    # --- No duplicate region/month combinations ---
-    if "REGIONID" in df.columns and "YEAR_MONTH" in df.columns:
-        dupes = df.duplicated(subset=["REGIONID", "YEAR_MONTH"], keep=False)
-        check(dupes.sum() == 0, f"{dupes.sum()} duplicate region/month rows")
+    return errors
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--outputs-dir", type=Path, default=OUTPUTS_DIR)
+    args = parser.parse_args(argv)
+
+    print("Validating AEMO Negative Prices outputs...")
+    errors = validate(args.outputs_dir)
+    if errors:
+        print(f"\n{len(errors)} validation error(s) found — aborting.")
+        return 1
+    print("\nAll validations passed.")
+    return 0
 
 
 if __name__ == "__main__":
-    print("Validating AEMO Negative Prices outputs...")
-    validate()
-    if errors:
-        print(f"\n{len(errors)} validation error(s) found — aborting.")
-        sys.exit(1)
-    else:
-        print("\nAll validations passed.")
+    sys.exit(main())

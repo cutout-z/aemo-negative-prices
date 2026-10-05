@@ -2,6 +2,7 @@
 
 import logging
 
+import numpy as np
 import pandas as pd
 
 from . import config
@@ -9,17 +10,41 @@ from . import config
 logger = logging.getLogger(__name__)
 
 
+def interval_start(settlementdate: pd.Series) -> pd.Series:
+    """Return the start of each dispatch interval.
+
+    AEMO's SETTLEMENTDATE is the interval END (the 08:00-08:05 interval is
+    stamped 08:05), so the start is SETTLEMENTDATE minus one interval.
+    """
+    return settlementdate - pd.Timedelta(minutes=config.INTERVAL_MINUTES)
+
+
+def price_in_cents(rrp: pd.Series) -> np.ndarray:
+    """Round RRP ($/MWh) to whole cents, half away from zero, without float error.
+
+    RRP is published with at most config.RRP_DECIMALS (5) decimal places, so it
+    is first snapped to an exact integer number of 1e-5 units (the binary-float
+    error of the parsed value is far below half a unit), then rounded to cents
+    in integer arithmetic: -0.00499 -> 0, -0.005 -> -1, -10.005 -> -1001.
+    Returns float64 whole-cent values (exact integers); NaN stays NaN.
+    """
+    scale = 10 ** (config.RRP_DECIMALS - 2)  # 1,000 units of 1e-5 per cent
+    units = np.rint(rrp.to_numpy(dtype="float64") * 10 ** config.RRP_DECIMALS)
+    return np.sign(units) * np.floor((np.abs(units) + scale // 2) / scale)
+
+
 def filter_daylight_hours(df: pd.DataFrame) -> pd.DataFrame:
-    """Keep only intervals within daylight hours (08:00–16:00 AEST market time).
+    """Keep only intervals that START within 08:00-16:00 AEST market time.
 
     NEM runs on AEST year-round. NEMOSIS returns SETTLEMENTDATE in AEST.
+    Keeps end stamps 08:05 .. 16:00 inclusive: 96 intervals per day.
     """
     df = df.copy()
-    df["hour"] = df["SETTLEMENTDATE"].dt.hour
+    start_hour = interval_start(df["SETTLEMENTDATE"]).dt.hour
     daylight = df[
-        (df["hour"] >= config.DAYLIGHT_START_HOUR)
-        & (df["hour"] < config.DAYLIGHT_END_HOUR)
-    ].drop(columns=["hour"])
+        (start_hour >= config.DAYLIGHT_START_HOUR)
+        & (start_hour < config.DAYLIGHT_END_HOUR)
+    ]
     return daylight
 
 
@@ -32,7 +57,9 @@ def calculate_monthly_stats(df: pd.DataFrame) -> pd.DataFrame:
         count_below_0, pct_below_0, count_below_neg10, pct_below_neg10, ...
     """
     df = df.copy()
-    df["YEAR_MONTH"] = df["SETTLEMENTDATE"].dt.to_period("M").astype(str)
+    # Month of the interval START, so the interval stamped 00:00 on the 1st
+    # (23:55-00:00) belongs to the month it ran in.
+    df["YEAR_MONTH"] = interval_start(df["SETTLEMENTDATE"]).dt.to_period("M").astype(str)
 
     grouped = df.groupby(["REGIONID", "YEAR_MONTH"])
 
@@ -45,8 +72,11 @@ def calculate_monthly_stats(df: pd.DataFrame) -> pd.DataFrame:
             "total_daylight_intervals": total,
         }
 
+        cents = price_in_cents(group["RRP"])
         for threshold in config.THRESHOLDS:
-            count = (group["RRP"] < threshold).sum()
+            # Compare at cents (see config.THRESHOLDS): sub-cent negatives such
+            # as -0.00002 are $0.00 and are not "below $0".
+            count = (cents < threshold * 100).sum()
             pct = round(count / total * 100, 2) if total > 0 else 0.0
             suffix = _threshold_suffix(threshold)
             row[f"count_below_{suffix}"] = int(count)
@@ -73,12 +103,15 @@ def _threshold_suffix(threshold: int) -> str:
 
 
 def _check_interval_count(region: str, year_month: str, total: int):
-    """Log warning if interval count is outside expected range."""
-    # Expected: 96 intervals/day × 28-31 days = 2688-2976
-    if total < 2600 or total > 3100:
+    """Log a warning unless the month has exactly days_in_month x 96 intervals.
+
+    tests/validate_outputs.py enforces the same rule as a hard gate.
+    """
+    expected = pd.Period(year_month, freq="M").days_in_month * config.INTERVALS_PER_DAY
+    if total != expected:
         logger.warning(
             f"Unexpected interval count for {region} {year_month}: "
-            f"{total} (expected ~2688-2976)"
+            f"{total} (expected {expected})"
         )
 
 

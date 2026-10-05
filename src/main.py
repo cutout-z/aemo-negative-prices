@@ -1,13 +1,14 @@
 """CLI orchestrator for AEMO negative price analysis."""
 
 import argparse
+import io
 import logging
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
-from pandas.testing import assert_frame_equal
 
 from . import config
 from .download import download_month, download_range, get_latest_available_month
@@ -24,13 +25,13 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-def load_summary() -> pd.DataFrame | None:
-    """Load existing summary.csv if it exists and is valid."""
-    summary_path = PROJECT_ROOT / config.SUMMARY_CSV
+def load_summary(output_dir: str | Path | None = None) -> pd.DataFrame | None:
+    """Load existing summary.csv (in output_dir, default outputs/) if it exists and is valid."""
+    summary_path = Path(output_dir or PROJECT_ROOT / config.OUTPUT_DIR) / "summary.csv"
     if not summary_path.exists():
         return None
     try:
-        df = pd.read_csv(summary_path)
+        df = pd.read_csv(summary_path, float_precision="round_trip")
         if df.empty or "YEAR_MONTH" not in df.columns:
             logger.warning("summary.csv is empty or malformed, will do full refresh")
             return None
@@ -40,9 +41,9 @@ def load_summary() -> pd.DataFrame | None:
         return None
 
 
-def save_summary(df: pd.DataFrame):
-    """Save summary DataFrame to CSV."""
-    summary_path = PROJECT_ROOT / config.SUMMARY_CSV
+def save_summary(df: pd.DataFrame, output_dir: str | Path | None = None):
+    """Save summary DataFrame to summary.csv in output_dir (default outputs/)."""
+    summary_path = Path(output_dir or PROJECT_ROOT / config.OUTPUT_DIR) / "summary.csv"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(summary_path, index=False)
     logger.info(f"Saved summary.csv ({len(df)} rows)")
@@ -76,47 +77,113 @@ def _month_labels(months: list[tuple[int, int]], months_back: int) -> set[str]:
     return {f"{y}-{m:02d}" for y, m in months[-months_back:]}
 
 
-def _assert_settled_history_unchanged(
-    before: pd.DataFrame | None,
+def load_baseline(path: str | None = None, repo_root: Path = PROJECT_ROOT) -> pd.DataFrame | None:
+    """Load the published summary that settled history is checked against.
+
+    With ``path``, read that file (it must exist). Otherwise read the
+    COMMITTED summary, ``git show HEAD:outputs/summary.csv`` in ``repo_root``,
+    never the working tree, which an earlier run or a manual edit may have
+    changed. Returns None (guard skipped, with a warning) when there is no
+    committed summary.
+    """
+    if path is not None:
+        return pd.read_csv(path, float_precision="round_trip")
+    try:
+        committed = subprocess.run(
+            ["git", "-C", str(repo_root), "show", f"HEAD:{config.SUMMARY_CSV}"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as exc:
+        logger.warning("No committed %s to guard settled history against (%s)",
+                       config.SUMMARY_CSV, exc)
+        return None
+    return pd.read_csv(io.StringIO(committed), float_precision="round_trip")
+
+
+def _settled_history_changes(
+    baseline: pd.DataFrame | None,
     after: pd.DataFrame,
     mutable_months: set[str],
-) -> None:
-    """Abort normal runs if settled historical month statistics change."""
-    if before is None or before.empty or after.empty:
-        return
-
+) -> list[str]:
+    """Describe every settled (non-mutable) baseline row that ``after`` changes or drops."""
     key_cols = ["REGIONID", "YEAR_MONTH"]
-    columns = [c for c in before.columns if c in after.columns]
-    if not all(c in columns for c in key_cols):
-        return
+    if baseline is None or baseline.empty:
+        return []
 
-    before_protected = before[~before["YEAR_MONTH"].isin(mutable_months)][columns]
-    after_protected = after[after["YEAR_MONTH"].isin(before_protected["YEAR_MONTH"])][columns]
-    before_protected = before_protected.sort_values(key_cols).reset_index(drop=True)
-    after_protected = after_protected.sort_values(key_cols).reset_index(drop=True)
+    before = baseline[~baseline["YEAR_MONTH"].isin(mutable_months)]
+    before = before.set_index(key_cols).sort_index()
+    current = after.set_index(key_cols).reindex(before.index)
 
-    try:
-        assert_frame_equal(before_protected, after_protected, check_dtype=False)
-    except AssertionError as exc:
+    common = [c for c in before.columns if c in current.columns]
+    absent = [c for c in before.columns if c not in current.columns]
+    removed = current[common].isna().all(axis=1) if common else pd.Series(True, index=before.index)
+    differs = before[common].ne(current[common])
+
+    changes = []
+    for i, key in enumerate(before.index):
+        label = " ".join(key)
+        if removed.iloc[i]:
+            changes.append(f"{label}: row removed")
+            continue
+        diffs = [
+            f"{col} {before[col].iloc[i]} -> {current[col].iloc[i]}"
+            for col in common
+            if differs[col].iloc[i]
+        ] + [f"{col} column removed" for col in absent]
+        if diffs:
+            changes.append(f"{label}: " + ", ".join(diffs))
+    return changes
+
+
+def _assert_settled_history_unchanged(
+    baseline: pd.DataFrame | None,
+    after: pd.DataFrame,
+    mutable_months: set[str],
+    allow_history_rewrite: str | None = None,
+) -> list[str]:
+    """Refuse to publish changes to settled months unless a rewrite reason is given.
+
+    ``baseline`` is the committed summary (see load_baseline). Rows for months
+    outside ``mutable_months`` must be unchanged, in incremental and full
+    refreshes alike. With ``allow_history_rewrite`` the changes are logged with
+    the reason and allowed. Returns the list of changes.
+    """
+    changes = _settled_history_changes(baseline, after, mutable_months)
+    if not changes:
+        if baseline is not None and not baseline.empty:
+            logger.info("Settled-history guard: %d protected region-month rows unchanged",
+                        int((~baseline["YEAR_MONTH"].isin(mutable_months)).sum()))
+        return changes
+
+    shown = "\n  ".join(changes[:20]) + (f"\n  ... and {len(changes) - 20} more" if len(changes) > 20 else "")
+    if not allow_history_rewrite:
         raise RuntimeError(
-            "Negative price run attempted to change settled months outside the "
-            "mutable window. Use --full-refresh only for deliberate audited rewrites."
-        ) from exc
+            f"Run would change {len(changes)} settled region-month rows outside the "
+            f"mutable window versus the committed summary:\n  {shown}\n"
+            "Re-run with --allow-history-rewrite \"<reason>\" only for a deliberate, "
+            "audited rewrite."
+        )
+    logger.warning("HISTORY REWRITE ALLOWED: %s", allow_history_rewrite)
+    logger.warning("Rewriting %d settled region-month rows:\n  %s", len(changes), shown)
+    return changes
 
-    logger.info(
-        "Settled-history guard: %d protected region-month rows unchanged",
-        len(before_protected),
-    )
 
-
-def run(full_refresh: bool = False, months_back: int = 1):
+def run(
+    full_refresh: bool = False,
+    months_back: int = 1,
+    baseline_path: str | None = None,
+    allow_history_rewrite: str | None = None,
+    output_dir: str | None = None,
+    cache_dir: str | None = None,
+):
     """Main execution flow."""
-    cache_dir = str(PROJECT_ROOT / config.DATA_DIR)
-    output_dir = str(PROJECT_ROOT / config.OUTPUT_DIR)
+    cache_dir = str(Path(cache_dir) if cache_dir else PROJECT_ROOT / config.DATA_DIR)
+    output_dir = str(Path(output_dir) if output_dir else PROJECT_ROOT / config.OUTPUT_DIR)
+    Path(cache_dir).mkdir(parents=True, exist_ok=True)
 
-    # Step 1: Load existing summary
-    summary = None if full_refresh else load_summary()
-    settled_before = summary.copy() if summary is not None and not full_refresh else None
+    # Step 1: Load existing summary, and the committed one to guard history
+    summary = None if full_refresh else load_summary(output_dir)
+    baseline = load_baseline(baseline_path, PROJECT_ROOT)
     existing_months = get_existing_months(summary)
 
     if full_refresh:
@@ -207,11 +274,10 @@ def run(full_refresh: bool = False, months_back: int = 1):
         logger.error("No data was successfully processed.")
         sys.exit(1)
 
-    if not full_refresh:
-        _assert_settled_history_unchanged(settled_before, summary, force_months)
+    _assert_settled_history_unchanged(baseline, summary, force_months, allow_history_rewrite)
 
     # Step 6: Save summary and generate Excel
-    save_summary(summary)
+    save_summary(summary, output_dir)
     generate_all_workbooks(summary, output_dir)
 
     logger.info("Done.")
@@ -230,8 +296,43 @@ def main():
         default=1,
         help="Number of recent complete months to reprocess in incremental mode",
     )
+    parser.add_argument(
+        "--baseline",
+        metavar="CSV",
+        help="Published summary to guard settled history against "
+             "(default: the committed HEAD:outputs/summary.csv)",
+    )
+    parser.add_argument(
+        "--allow-history-rewrite",
+        metavar="REASON",
+        help="Allow changes to settled months (outside --months-back) and log REASON; "
+             "required for any audited rewrite, including --full-refresh method changes",
+    )
+    parser.add_argument(
+        "--output-dir",
+        metavar="DIR",
+        help="Write summary.csv and the workbooks here instead of outputs/ "
+             "(incremental runs also read the existing summary.csv from here)",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        metavar="DIR",
+        help="NEMOSIS raw cache (default data/). NEMOSIS reuses any month already in it "
+             "as feather, or as the extracted MMSDM CSV under its own name, e.g. "
+             "PUBLIC_DVD_DISPATCHPRICE_201905010000.CSV (to 2024-07) or "
+             "PUBLIC_ARCHIVE#DISPATCHPRICE#FILE01#202408010000.CSV (from 2024-08)",
+    )
     args = parser.parse_args()
-    run(full_refresh=args.full_refresh, months_back=args.months_back)
+    if args.allow_history_rewrite is not None and not args.allow_history_rewrite.strip():
+        parser.error("--allow-history-rewrite needs a non-empty reason")
+    run(
+        full_refresh=args.full_refresh,
+        months_back=args.months_back,
+        baseline_path=args.baseline,
+        allow_history_rewrite=args.allow_history_rewrite,
+        output_dir=args.output_dir,
+        cache_dir=args.cache_dir,
+    )
 
 
 if __name__ == "__main__":
