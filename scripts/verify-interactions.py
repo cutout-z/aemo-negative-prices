@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import pathlib
 import sys
+from decimal import ROUND_HALF_UP, Decimal
 
 from playwright.sync_api import sync_playwright
 
@@ -47,6 +48,72 @@ def label(ym: str) -> str:
     return f"{MONTHS[int(m) - 1]} {y}"
 
 
+TH_LABELS = ["< $0", "< −$10", "< −$20", "< −$30", "< −$40", "< −$50", "< −$60", "< −$70", "< −$80"]
+NAMES = {v: k for k, v in REGIONS.items()}
+
+
+def region_rows(region: str) -> list[dict[str, str]]:
+    return sorted((r for r in rows if r["REGIONID"] == region), key=lambda r: r["YEAR_MONTH"])
+
+
+def pct2(v: str) -> str:
+    """Two decimals, rounded on the exact decimal in the file (not a binary float)."""
+    return f"{Decimal(v).quantize(Decimal('0.01'), ROUND_HALF_UP)}%"
+
+
+def thousands(v: str) -> str:
+    return f"{int(v):,}"
+
+
+def expected_kpis(region: str) -> list[list[str]]:
+    """The KPI row recomputed from summary.csv alone — value, label, note for each of the four tiles."""
+    reg = region_rows(region)
+    last = reg[-1]
+    month = last["YEAR_MONTH"]
+    now = Decimal(last["pct_below_0"])
+    t1 = [pct2(last["pct_below_0"]), f"Below $0 · {label(month)}",
+          f"{thousands(last['count_below_0'])} of {thousands(last['total_daylight_intervals'])} daylight intervals"]
+
+    y, m = month.split("-")
+    prev_month = f"{int(y) - 1}-{m}"
+    prev = next((r for r in reg if r["YEAR_MONTH"] == prev_month), None)
+    if prev:
+        then = Decimal(prev["pct_below_0"])
+        d = now - then
+        word = "unchanged" if abs(d) < Decimal("0.005") else \
+            f"{'up' if d > 0 else 'down'} {abs(d).quantize(Decimal('0.01'), ROUND_HALF_UP)} pts"
+        t2 = [pct2(prev["pct_below_0"]), f"Below $0 · {label(prev_month)}", f"{label(month)} is {word}"]
+    else:
+        t2 = ["N/A", f"Below $0 · {label(prev_month)}", "no row for this month in the data"]
+
+    deep = max((i for i, t in enumerate(THRESHOLDS) if any(int(r[f"count_below_{t}"]) > 0 for r in reg)),
+               default=-1)
+    if deep >= 0:
+        hits = [r for r in reg if int(r[f"count_below_{THRESHOLDS[deep]}"]) > 0]
+        t3 = [TH_LABELS[deep], "Deepest threshold crossed",
+              f"last in {label(hits[-1]['YEAR_MONTH'])} · {len(hits)} of {len(reg)} months"]
+    else:
+        t3 = ["None", "Deepest threshold crossed", f"no interval below $0 in {len(reg)} months"]
+
+    peers = [r for r in rows if r["YEAR_MONTH"] == month]
+    higher = sum(Decimal(r["pct_below_0"]) > now for r in peers)
+    tied = sum(r["REGIONID"] != region and Decimal(r["pct_below_0"]) == now for r in peers)
+    top = peers[0]
+    for r in peers[1:]:                       # first-wins on ties, as the page's reduce does
+        if Decimal(r["pct_below_0"]) > Decimal(top["pct_below_0"]):
+            top = r
+    note = (f"highest of the {len(peers)} in {label(month)}" if top["REGIONID"] == region
+            else f"highest: {NAMES[top['REGIONID']]} at {pct2(top['pct_below_0'])}")
+    t4 = [f"{'=' if tied else ''}{higher + 1} of {len(peers)}", f"Rank below $0 · {label(month)}", note]
+    return [t1, t2, t3, t4]
+
+
+def click_tab(page, name: str) -> None:
+    page.evaluate("""(label) => { const b = [...document.querySelectorAll('#tabs button, #tabs .seg-item')]
+        .find(x => x.innerText.trim() === label); b.click(); }""", name)
+    page.wait_for_timeout(300)
+
+
 print(f"csv: {len(rows)} rows · {len(months)} months · latest {latest}")
 
 with sync_playwright() as pw:
@@ -68,26 +135,42 @@ with sync_playwright() as pw:
 
     print("tabs")
     for name, region in REGIONS.items():
-        pg.evaluate("""(label) => { const b = [...document.querySelectorAll('#tabs button, #tabs .seg-item')]
-            .find(x => x.innerText.trim() === label); b.click(); }""", name)
-        pg.wait_for_timeout(300)
+        click_tab(pg, name)
+        reg = region_rows(region)
         n = pg.eval_on_selector_all("#tbody tr", "e => e.length")
-        check(n == len(months), f"{name} tab renders {len(months)} rows", f"{n} rows")
+        check(n == len(reg), f"{name} tab renders {len(reg)} rows (its months in the csv)", f"{n} rows")
         first = pg.inner_text("#tbody tr:first-child")
-        check(first.startswith(label(months[0])), f"{name} first row is {label(months[0])}", first[:40])
+        first_label = label(reg[0]["YEAR_MONTH"])
+        check(first.startswith(first_label), f"{name} first row is {first_label}", first[:40])
 
-    print("values match the csv")
-    pg.evaluate("""(() => { const b = [...document.querySelectorAll('#tabs button, #tabs .seg-item')]
-        .find(x => x.innerText.trim() === 'VIC'); b.click(); })()""")
-    pg.wait_for_timeout(300)
+    print("values match the csv (every region, every cell, the KPI row and the badges)")
+    for name, region in REGIONS.items():
+        click_tab(pg, name)
+        reg = region_rows(region)
+        table = pg.eval_on_selector_all(
+            "#tbody tr", "rows => rows.map(r => [...r.children].map(c => c.innerText.trim()))")
+        by_month = {r[0]: r[1:] for r in table}
+        want = {label(r["YEAR_MONTH"]): [pct2(r["pct_below_" + t]) for t in THRESHOLDS] for r in reg}
+        missing = [m for m in want if m not in by_month]
+        extra = [m for m in by_month if m not in want]
+        mismatched = [(m, by_month[m], want[m]) for m in want if m in by_month and by_month[m] != want[m]]
+        check(not missing and not extra and not mismatched,
+              f"{name}: every cell equals summary.csv ({len(THRESHOLDS)} thresholds x {len(reg)} months)",
+              f"missing {missing[:2]}, extra {extra[:2]}, {len(mismatched)} mismatched, e.g. {mismatched[:2]}")
+
+        tiles = pg.eval_on_selector_all(
+            "#kpis > div", "e => e.map(t => [...t.children].map(c => c.innerText.trim()))")
+        exp = expected_kpis(region)
+        check(tiles == exp, f"{name}: the four KPI tiles equal the figures recomputed from the csv",
+              f"page {tiles} vs csv {exp}")
+
+        badges = pg.eval_on_selector_all("#badges .badge", "e => e.map(x => x.innerText.trim())")
+        want_b = [f"{len(reg)} months", f"{label(reg[0]['YEAR_MONTH'])} – {label(reg[-1]['YEAR_MONTH'])}",
+                  f"{len(THRESHOLDS)} thresholds"]
+        check(badges == want_b, f"{name}: the table badges state the csv's span", f"{badges} vs {want_b}")
+    click_tab(pg, "VIC")
     table = pg.eval_on_selector_all(
         "#tbody tr", "rows => rows.map(r => [...r.children].map(c => c.innerText.trim()))")
-    by_month = {r[0]: r[1:] for r in table}
-    csv_vic = {label(r["YEAR_MONTH"]): [f'{float(r["pct_below_" + t]):.2f}%' for t in THRESHOLDS]
-               for r in rows if r["REGIONID"] == "VIC1"}
-    mismatched = [(m, by_month[m], csv_vic[m]) for m in csv_vic if m in by_month and by_month[m] != csv_vic[m]]
-    check(not mismatched, "every VIC1 cell equals outputs/summary.csv (9 thresholds x 87 months)",
-          f"{len(mismatched)} mismatched, e.g. {mismatched[:2]}")
 
     print("table shape")
     heads = pg.eval_on_selector_all("#thead th", "e => e.map(x => x.innerText.trim())")

@@ -15,9 +15,11 @@ fair where the brief names it.
 from __future__ import annotations
 
 import argparse
+import csv
 import pathlib
 import re
 import sys
+from decimal import Decimal
 
 from playwright.sync_api import sync_playwright
 
@@ -26,6 +28,23 @@ URL = "http://127.0.0.1:9382/index.html"
 SCREENS = ROOT / "design" / "screens"
 TOKEN_SRC = ROOT / "assets" / "css" / "tailwind.src.css"
 PAGE = ROOT / "index.html"
+CSV = ROOT / "outputs" / "summary.csv"
+THRESHOLDS = ["0", "neg10", "neg20", "neg30", "neg40", "neg50", "neg60", "neg70", "neg80"]
+HEAT_STOPS = [Decimal(s) for s in ("1", "5", "10", "20", "35", "50")]   # mirrors index.html
+
+# The default region is whatever the page opens on (`let activeRegion = '…'`), read from the page so
+# the gate cannot drift from it.
+DEFAULT_REGION = re.search(r"let activeRegion = '([A-Z]+1)'", PAGE.read_text()).group(1)
+with CSV.open() as _fh:
+    default_rows = [r for r in csv.DictReader(_fh) if r["REGIONID"] == DEFAULT_REGION]
+default_cells = sum(1 for r in default_rows for t in THRESHOLDS if r[f"pct_below_{t}"].strip())
+
+
+def heat_step(pct: Decimal) -> int:
+    if pct <= 0:
+        return 0
+    return next((i + 1 for i, s in enumerate(HEAT_STOPS) if pct < s), 7)
+
 
 fails: list[str] = []
 
@@ -155,12 +174,26 @@ def main() -> int:
               f"empty: {n_kpi - len(kpi_text)}")
 
         print("the heat table")
+        # The expected shape comes from the data file, not a number frozen on the day the gate was
+        # written: every monthly data update adds a row, and a literal here fails the next month.
         rows = pg.eval_on_selector_all("#tbody tr", "e => e.length")
-        check(rows == 87, "87 month rows render for the default region", f"{rows} rows")
+        check(rows == len(default_rows),
+              f"{len(default_rows)} month rows render for the default region ({DEFAULT_REGION}, from the csv)",
+              f"{rows} rows")
         heat = pg.eval_on_selector_all(
             "td", "e => e.filter(x => /%/.test(x.innerText)).map(x => ({cls: x.className, txt: x.innerText.trim(), bg: getComputedStyle(x).backgroundColor}))")
-        check(len(heat) >= 700, "the heat cells render (9 thresholds x 87 months)",
+        check(len(heat) == default_cells,
+              f"the heat cells render ({default_cells} numeric cells: {len(THRESHOLDS)} thresholds x {len(default_rows)} months)",
               f"{len(heat)} cells")
+        # The step each cell carries must be the step its own number earns (HEAT_STOPS in the page);
+        # a cell can be on the ramp and still be painted the wrong shade.
+        want_steps = [heat_step(Decimal(r[f"pct_below_{t}"])) for r in default_rows for t in THRESHOLDS
+                      if r[f"pct_below_{t}"].strip()]
+        got_steps = [int(m.group(1)) if (m := re.search(r"\bseq-(\d)\b", c["cls"] or "")) else -1 for c in heat]
+        wrong = [(i, g, w) for i, (g, w) in enumerate(zip(got_steps, want_steps)) if g != w]
+        check(len(got_steps) == len(want_steps) and not wrong,
+              "every heat cell's ramp step matches its value (HEAT_STOPS 0 | <1 | <5 | <10 | <20 | <35 | <50 | >=50)",
+              f"{len(wrong)} wrong, e.g. {wrong[:3]}")
         seq = [c for c in heat if re.search(r"\bseq-\d\b", c["cls"] or "")]
         check(len(seq) == len(heat), "every heat cell uses the .seq-* ramp",
               f"{len(heat) - len(seq)} cells not on the ramp")
