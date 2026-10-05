@@ -14,8 +14,15 @@ REGION_NAMES = {
     "TAS1": "TAS",
 }
 
-# Negative price thresholds (strictly less than)
+# Negative price thresholds ($/MWh). An interval counts below a threshold when
+# its RRP, rounded to whole cents (half away from zero), is strictly less than
+# the threshold. So -0.004 rounds to 0.00 and is NOT below $0, while -0.005
+# rounds to -0.01 and IS; likewise -10.004 is not below -$10 and -10.005 is.
+# This matches AEMO's 2-dp PRICE_AND_DEMAND prices. See analyse.price_in_cents.
 THRESHOLDS = [0, -10, -20, -30, -40, -50, -60, -70, -80]
+
+# AEMO publishes DISPATCHPRICE.RRP as NUMBER(15,5): at most 5 decimal places.
+RRP_DECIMALS = 5
 
 # Analysis start date
 START_DATE = datetime(2019, 5, 1)

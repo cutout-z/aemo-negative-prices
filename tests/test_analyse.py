@@ -72,3 +72,58 @@ def test_analyse_month_counts_window_edges():
     assert row["YEAR_MONTH"] == "2024-03"
     assert row["total_daylight_intervals"] == 96
     assert row["count_below_0"] == 1
+
+
+# --- M1: thresholds compared at whole cents -----------------------------------
+
+@pytest.mark.parametrize(
+    "rrp, cents",
+    [
+        (0.0, 0), (-0.00002, 0), (-0.004, 0), (-0.00499, 0),
+        (-0.005, -1), (-0.006, -1), (-0.01, -1), (0.005, 1),
+        (-10.004, -1000), (-10.00499, -1000), (-10.005, -1001), (-10.006, -1001),
+        (-79.995, -8000), (-80.005, -8001), (-1000.0, -100000), (17500.0, 1750000),
+    ],
+)
+def test_price_in_cents_rounds_half_away_from_zero(rrp, cents):
+    from src.analyse import price_in_cents
+
+    assert price_in_cents(pd.Series([rrp]))[0] == cents
+
+
+def _counts_for(prices):
+    stamps = pd.date_range("2024-03-10 08:05", periods=len(prices), freq="5min")
+    row = calculate_monthly_stats(_frame(stamps, list(prices))).iloc[0]
+    return {t: row[f"count_below_{'0' if t == 0 else f'neg{-t}'}"] for t in config.THRESHOLDS}
+
+
+@pytest.mark.parametrize(
+    "rrp, below_0, below_neg10",
+    [
+        (-0.00002, 0, 0),
+        (-0.004, 0, 0),
+        (-0.005, 1, 0),   # rounds to -0.01: below $0
+        (-0.006, 1, 0),
+        (-10.0, 1, 0),    # strictly less than: -10.00 is not below -$10
+        (-10.004, 1, 0),  # rounds to -10.00
+        (-10.005, 1, 1),  # rounds to -10.01
+        (-10.006, 1, 1),
+    ],
+)
+def test_threshold_boundaries_at_cents(rrp, below_0, below_neg10):
+    counts = _counts_for([rrp])
+    assert counts[0] == below_0
+    assert counts[-10] == below_neg10
+
+
+def test_every_threshold_uses_cent_rule():
+    for t in config.THRESHOLDS:
+        assert _counts_for([t - 0.004])[t] == 0
+        assert _counts_for([t - 0.005])[t] == 1
+
+
+def test_nan_price_is_not_counted_but_kept_in_total():
+    stamps = pd.date_range("2024-03-10 08:05", periods=2, freq="5min")
+    row = calculate_monthly_stats(_frame(stamps, [float("nan"), -5.0])).iloc[0]
+    assert row["total_daylight_intervals"] == 2
+    assert row["count_below_0"] == 1

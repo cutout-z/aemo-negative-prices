@@ -2,6 +2,7 @@
 
 import logging
 
+import numpy as np
 import pandas as pd
 
 from . import config
@@ -16,6 +17,20 @@ def interval_start(settlementdate: pd.Series) -> pd.Series:
     stamped 08:05), so the start is SETTLEMENTDATE minus one interval.
     """
     return settlementdate - pd.Timedelta(minutes=config.INTERVAL_MINUTES)
+
+
+def price_in_cents(rrp: pd.Series) -> np.ndarray:
+    """Round RRP ($/MWh) to whole cents, half away from zero, without float error.
+
+    RRP is published with at most config.RRP_DECIMALS (5) decimal places, so it
+    is first snapped to an exact integer number of 1e-5 units (the binary-float
+    error of the parsed value is far below half a unit), then rounded to cents
+    in integer arithmetic: -0.00499 -> 0, -0.005 -> -1, -10.005 -> -1001.
+    Returns float64 whole-cent values (exact integers); NaN stays NaN.
+    """
+    scale = 10 ** (config.RRP_DECIMALS - 2)  # 1,000 units of 1e-5 per cent
+    units = np.rint(rrp.to_numpy(dtype="float64") * 10 ** config.RRP_DECIMALS)
+    return np.sign(units) * np.floor((np.abs(units) + scale // 2) / scale)
 
 
 def filter_daylight_hours(df: pd.DataFrame) -> pd.DataFrame:
@@ -57,8 +72,11 @@ def calculate_monthly_stats(df: pd.DataFrame) -> pd.DataFrame:
             "total_daylight_intervals": total,
         }
 
+        cents = price_in_cents(group["RRP"])
         for threshold in config.THRESHOLDS:
-            count = (group["RRP"] < threshold).sum()
+            # Compare at cents (see config.THRESHOLDS): sub-cent negatives such
+            # as -0.00002 are $0.00 and are not "below $0".
+            count = (cents < threshold * 100).sum()
             pct = round(count / total * 100, 2) if total > 0 else 0.0
             suffix = _threshold_suffix(threshold)
             row[f"count_below_{suffix}"] = int(count)
