@@ -154,3 +154,20 @@ def test_settled_history_changes_reports_columns():
     ]
     assert M._settled_history_changes(base, after, {"2019-05"}) == []
     assert M._settled_history_changes(None, after, set()) == []
+
+
+def test_output_and_cache_dirs(repo, tmp_path, monkeypatch):
+    seen = []
+    real = M.download_month
+
+    def recording(y, m, cache, force=False):
+        seen.append(cache)
+        return real(y, m, cache)
+
+    monkeypatch.setattr(M, "download_month", recording)
+    out, cache = tmp_path / "elsewhere" / "out", tmp_path / "elsewhere" / "cache"
+    repo.set_latest(2019, 9)
+    M.run(full_refresh=True, output_dir=str(out), cache_dir=str(cache))
+    assert set(seen) == {str(cache)} and cache.is_dir()
+    assert pd.read_csv(out / "summary.csv").YEAR_MONTH.max() == "2019-09"
+    assert repo.summary.read_text() == repo.committed()  # repo outputs untouched

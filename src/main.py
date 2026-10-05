@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-def load_summary() -> pd.DataFrame | None:
-    """Load existing summary.csv if it exists and is valid."""
-    summary_path = PROJECT_ROOT / config.SUMMARY_CSV
+def load_summary(output_dir: str | Path | None = None) -> pd.DataFrame | None:
+    """Load existing summary.csv (in output_dir, default outputs/) if it exists and is valid."""
+    summary_path = Path(output_dir or PROJECT_ROOT / config.OUTPUT_DIR) / "summary.csv"
     if not summary_path.exists():
         return None
     try:
@@ -41,9 +41,9 @@ def load_summary() -> pd.DataFrame | None:
         return None
 
 
-def save_summary(df: pd.DataFrame):
-    """Save summary DataFrame to CSV."""
-    summary_path = PROJECT_ROOT / config.SUMMARY_CSV
+def save_summary(df: pd.DataFrame, output_dir: str | Path | None = None):
+    """Save summary DataFrame to summary.csv in output_dir (default outputs/)."""
+    summary_path = Path(output_dir or PROJECT_ROOT / config.OUTPUT_DIR) / "summary.csv"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(summary_path, index=False)
     logger.info(f"Saved summary.csv ({len(df)} rows)")
@@ -173,13 +173,16 @@ def run(
     months_back: int = 1,
     baseline_path: str | None = None,
     allow_history_rewrite: str | None = None,
+    output_dir: str | None = None,
+    cache_dir: str | None = None,
 ):
     """Main execution flow."""
-    cache_dir = str(PROJECT_ROOT / config.DATA_DIR)
-    output_dir = str(PROJECT_ROOT / config.OUTPUT_DIR)
+    cache_dir = str(Path(cache_dir) if cache_dir else PROJECT_ROOT / config.DATA_DIR)
+    output_dir = str(Path(output_dir) if output_dir else PROJECT_ROOT / config.OUTPUT_DIR)
+    Path(cache_dir).mkdir(parents=True, exist_ok=True)
 
     # Step 1: Load existing summary, and the committed one to guard history
-    summary = None if full_refresh else load_summary()
+    summary = None if full_refresh else load_summary(output_dir)
     baseline = load_baseline(baseline_path, PROJECT_ROOT)
     existing_months = get_existing_months(summary)
 
@@ -274,7 +277,7 @@ def run(
     _assert_settled_history_unchanged(baseline, summary, force_months, allow_history_rewrite)
 
     # Step 6: Save summary and generate Excel
-    save_summary(summary)
+    save_summary(summary, output_dir)
     generate_all_workbooks(summary, output_dir)
 
     logger.info("Done.")
@@ -305,6 +308,20 @@ def main():
         help="Allow changes to settled months (outside --months-back) and log REASON; "
              "required for any audited rewrite, including --full-refresh method changes",
     )
+    parser.add_argument(
+        "--output-dir",
+        metavar="DIR",
+        help="Write summary.csv and the workbooks here instead of outputs/ "
+             "(incremental runs also read the existing summary.csv from here)",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        metavar="DIR",
+        help="NEMOSIS raw cache (default data/). NEMOSIS reuses any month already in it "
+             "as feather, or as the extracted MMSDM CSV under its own name, e.g. "
+             "PUBLIC_DVD_DISPATCHPRICE_201905010000.CSV (to 2024-07) or "
+             "PUBLIC_ARCHIVE#DISPATCHPRICE#FILE01#202408010000.CSV (from 2024-08)",
+    )
     args = parser.parse_args()
     if args.allow_history_rewrite is not None and not args.allow_history_rewrite.strip():
         parser.error("--allow-history-rewrite needs a non-empty reason")
@@ -313,6 +330,8 @@ def main():
         months_back=args.months_back,
         baseline_path=args.baseline,
         allow_history_rewrite=args.allow_history_rewrite,
+        output_dir=args.output_dir,
+        cache_dir=args.cache_dir,
     )
 
 
