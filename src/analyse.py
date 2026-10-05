@@ -9,17 +9,27 @@ from . import config
 logger = logging.getLogger(__name__)
 
 
+def interval_start(settlementdate: pd.Series) -> pd.Series:
+    """Return the start of each dispatch interval.
+
+    AEMO's SETTLEMENTDATE is the interval END (the 08:00-08:05 interval is
+    stamped 08:05), so the start is SETTLEMENTDATE minus one interval.
+    """
+    return settlementdate - pd.Timedelta(minutes=config.INTERVAL_MINUTES)
+
+
 def filter_daylight_hours(df: pd.DataFrame) -> pd.DataFrame:
-    """Keep only intervals within daylight hours (08:00–16:00 AEST market time).
+    """Keep only intervals that START within 08:00-16:00 AEST market time.
 
     NEM runs on AEST year-round. NEMOSIS returns SETTLEMENTDATE in AEST.
+    Keeps end stamps 08:05 .. 16:00 inclusive: 96 intervals per day.
     """
     df = df.copy()
-    df["hour"] = df["SETTLEMENTDATE"].dt.hour
+    start_hour = interval_start(df["SETTLEMENTDATE"]).dt.hour
     daylight = df[
-        (df["hour"] >= config.DAYLIGHT_START_HOUR)
-        & (df["hour"] < config.DAYLIGHT_END_HOUR)
-    ].drop(columns=["hour"])
+        (start_hour >= config.DAYLIGHT_START_HOUR)
+        & (start_hour < config.DAYLIGHT_END_HOUR)
+    ]
     return daylight
 
 
@@ -32,7 +42,9 @@ def calculate_monthly_stats(df: pd.DataFrame) -> pd.DataFrame:
         count_below_0, pct_below_0, count_below_neg10, pct_below_neg10, ...
     """
     df = df.copy()
-    df["YEAR_MONTH"] = df["SETTLEMENTDATE"].dt.to_period("M").astype(str)
+    # Month of the interval START, so the interval stamped 00:00 on the 1st
+    # (23:55-00:00) belongs to the month it ran in.
+    df["YEAR_MONTH"] = interval_start(df["SETTLEMENTDATE"]).dt.to_period("M").astype(str)
 
     grouped = df.groupby(["REGIONID", "YEAR_MONTH"])
 
