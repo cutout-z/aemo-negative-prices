@@ -103,12 +103,15 @@ def _threshold_suffix(threshold: int) -> str:
 
 
 def _check_interval_count(region: str, year_month: str, total: int):
-    """Log warning if interval count is outside expected range."""
-    # Expected: 96 intervals/day × 28-31 days = 2688-2976
-    if total < 2600 or total > 3100:
+    """Log a warning unless the month has exactly days_in_month x 96 intervals.
+
+    tests/validate_outputs.py enforces the same rule as a hard gate.
+    """
+    expected = pd.Period(year_month, freq="M").days_in_month * config.INTERVALS_PER_DAY
+    if total != expected:
         logger.warning(
             f"Unexpected interval count for {region} {year_month}: "
-            f"{total} (expected ~2688-2976)"
+            f"{total} (expected {expected})"
         )
 
 

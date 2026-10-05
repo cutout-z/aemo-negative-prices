@@ -134,15 +134,17 @@ No manual intervention required. GitHub Actions is kept as a manual verification
 
 ### Output Validation
 
-After the pipeline runs and before committing, an automated validation step (`tests/validate_outputs.py`) checks:
+After the pipeline runs and before committing, an automated validation step (`tests/validate_outputs.py`) checks, exactly:
 
-- `summary.csv` exists and is non-empty
-- All 5 NEM regions are present
-- Daylight interval counts are within expected range (2,500–3,200 per region-month)
-- All percentages are in [0, 100]
+- `summary.csv` exists, is non-empty and has every count/percentage column with no empty cells
+- Exactly the 5 NEM regions are present, with no duplicate region/month rows
+- Every region-month has exactly days-in-month × 96 daylight intervals
+- Every count is within [0, total] and every percentage equals `round(count / total × 100, 2)`
 - Threshold ordering is preserved (count at $0 >= count at -$10 >= ... >= count at -$80)
-- No duplicate region/month rows
-- All 5 regional Excel workbooks exist
+- Each region's months run without gaps from May 2019, every region has the same months, and the latest month is a complete past month
+- All 5 regional Excel workbooks and the All States workbook exist
+
+Unit tests for the pipeline and the validator run with `python -m pytest` (synthetic data, no network).
 
 If any check fails, the NAS lane or manual fallback workflow exits before committing — preventing bad data from reaching the dashboard.
 

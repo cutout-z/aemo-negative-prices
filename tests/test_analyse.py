@@ -127,3 +127,19 @@ def test_nan_price_is_not_counted_but_kept_in_total():
     row = calculate_monthly_stats(_frame(stamps, [float("nan"), -5.0])).iloc[0]
     assert row["total_daylight_intervals"] == 2
     assert row["count_below_0"] == 1
+
+
+# --- Interval-count warning is exact (days_in_month x 96) ---------------------
+
+def test_interval_count_warning_is_exact(caplog):
+    from src.analyse import _check_interval_count
+
+    with caplog.at_level("WARNING"):
+        _check_interval_count("QLD1", "2020-02", 29 * 96)
+        assert caplog.records == []
+        _check_interval_count("QLD1", "2020-02", 29 * 96 - 1)
+        _check_interval_count("QLD1", "2019-07", 3125)
+    assert [r.getMessage() for r in caplog.records] == [
+        "Unexpected interval count for QLD1 2020-02: 2783 (expected 2784)",
+        "Unexpected interval count for QLD1 2019-07: 3125 (expected 2976)",
+    ]
