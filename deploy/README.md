@@ -26,6 +26,13 @@ The lane registry, cadence windows and report paths live in
 `git pull --ff-only` is impossible it resets onto the fetched remote instead
 of exiting 128.
 
+The lane's baseline is the committed `HEAD:outputs/summary.csv` (passed to
+`src.main --baseline`), never the working tree. The pipeline refuses any
+change to a settled month (outside `--months-back`) versus that baseline.
+For a deliberate, audited rewrite, set `HISTORY_REWRITE_REASON="<reason>"`:
+the script passes `--allow-history-rewrite "<reason>"` and records the
+reason in the commit message.
+
 ## Raw Cache Retention
 
 `RUN_RAW_CACHE_PRUNE=1` with `RAW_CACHE_RETENTION_DAYS=120` bounds the NEMOSIS
