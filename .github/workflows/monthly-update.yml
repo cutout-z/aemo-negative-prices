@@ -65,10 +65,13 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
+            data_month="$(awk -F, 'NR == 1 { for (i = 1; i <= NF; i++) if ($i == "YEAR_MONTH") c = i; next }
+              c && $c > m { m = $c } END { print m }' outputs/summary.csv)"
+            subject="Update negative price analysis ${data_month:-$(date +%Y-%m)}"
             if [ -n "${HISTORY_REWRITE_REASON}" ]; then
-              git commit -m "Update negative price analysis $(date +%Y-%m)" -m "History rewrite: ${HISTORY_REWRITE_REASON}"
+              git commit -m "${subject}" -m "History rewrite: ${HISTORY_REWRITE_REASON}"
             else
-              git commit -m "Update negative price analysis $(date +%Y-%m)"
+              git commit -m "${subject}"
             fi
             git push
           fi

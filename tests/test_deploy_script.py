@@ -90,3 +90,10 @@ def test_history_rewrite_reason_is_passed_and_recorded(lane):
     assert args[i + 1] == "H1 interval-start window"
     body = _git(lane.app, "log", "-1", "--format=%B")
     assert "History rewrite: H1 interval-start window" in body
+
+
+def test_commit_is_labelled_with_latest_data_month(lane):
+    new = COMMITTED + "SA1,2026-08,12\nSA1,2026-07,9\n"
+    result = lane.run(new)
+    assert result.returncode == 0, result.stderr
+    assert _git(lane.app, "log", "-1", "--format=%s").strip() == "Update negative price analysis 2026-08"

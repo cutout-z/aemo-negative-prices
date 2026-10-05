@@ -60,7 +60,10 @@ fi
 
 git config user.name "${GIT_AUTHOR_NAME:-aemo-nas-bot}"
 git config user.email "${GIT_AUTHOR_EMAIL:-aemo-nas-bot@users.noreply.github.com}"
-commit_args=(-m "${COMMIT_MESSAGE_PREFIX} $(date -u +%Y-%m)")
+# Label with the latest DATA month in the summary, not the run month.
+data_month="$(awk -F, 'NR == 1 { for (i = 1; i <= NF; i++) if ($i == "YEAR_MONTH") c = i; next }
+  c && $c > m { m = $c } END { print m }' outputs/summary.csv)"
+commit_args=(-m "${COMMIT_MESSAGE_PREFIX} ${data_month:-$(date -u +%Y-%m)}")
 if [[ -n "${HISTORY_REWRITE_REASON}" ]]; then
   commit_args+=(-m "History rewrite: ${HISTORY_REWRITE_REASON}")
 fi
