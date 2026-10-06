@@ -84,8 +84,8 @@ A month with 31 days has 2,976 daylight intervals (31 × 96). A percentage of 50
 
 **Excel workbook sheets:**
 
-1. **Percentages** — clean table of percentage values, months as rows, thresholds as columns
-2. **Heatmap** — same data with conditional colour formatting (green → yellow → red) for visual pattern recognition
+1. **Percentages** — clean table of percentage values (shown as e.g. 25.30%; the cell holds 25.3, as in `summary.csv`), months as rows, thresholds as columns
+2. **Heatmap** — same data with one colour scale across every threshold column: 0% green, 10% yellow, 50% and above red. The scale is fixed, so a colour means the same share in every column and workbook
 3. **Audit** — raw interval counts and total daylight intervals for verification/QA
 
 ---
