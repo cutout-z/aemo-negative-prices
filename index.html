@@ -270,6 +270,20 @@ function renderTabs() {
 const FIVE_MIN_START = '2021-10';
 const FIVE_MIN_NOTE = 'Five-minute settlement started 1 Oct 2021. Earlier months count 5-min dispatch prices, but generators were paid the 30-min trading price.';
 
+// Every month from the first to the latest in the data file (any region), oldest first. A month a
+// region has no row for gets a row of its own saying so, so a gap is never silently closed up.
+function nextMonth(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+}
+function monthSpan() {
+  const months = allData.map(r => r.YEAR_MONTH).sort();
+  const out = [];
+  for (let ym = months[0]; ym <= months[months.length - 1]; ym = nextMonth(ym)) out.push(ym);
+  return out;
+}
+const GAP_NOTE = `No row for this month in ${CSV_PATH}`;
+
 function renderTable() {
   const thead = document.getElementById('thead');
   const tbody = document.getElementById('tbody');
@@ -284,7 +298,13 @@ function renderTable() {
       `${CSV_PATH} loaded, but it has no rows for ${activeRegion}. The other regions are unaffected; this one fills in when the data update writes its rows.`));
     return;
   }
-  tbody.innerHTML = rows.map(row => {
+  const byMonth = new Map(rows.map(r => [r.YEAR_MONTH, r]));
+  tbody.innerHTML = monthSpan().map(ym => {
+    const row = byMonth.get(ym);
+    if (!row) {
+      return `<tr class="group" data-gap="${ym}"><th class="td sticky left-0 z-[1] whitespace-nowrap border-r border-r-line bg-surface text-left font-medium text-faint" scope="row">${formatMonth(ym)}</th>` +
+        `<td class="td whitespace-nowrap text-faint" colspan="${THRESHOLDS.length}">${GAP_NOTE}</td></tr>`;
+    }
     const cells = THRESHOLDS.map(t => {
       const val = parseFloat(row[`pct_below_${t}`]);
       if (isNaN(val)) return '<td class="td-num whitespace-nowrap text-faint">N/A</td>';
@@ -312,6 +332,9 @@ function renderBadges(rows) {
     `<span class="badge num">${rows.length} months</span>` +
     `<span class="badge num">${formatMonth(rows[0].YEAR_MONTH)} – ${formatMonth(rows[rows.length - 1].YEAR_MONTH)}</span>` +
     `<span class="badge num">${THRESHOLDS.length} thresholds</span>`;
+  const have = new Set(rows.map(r => r.YEAR_MONTH));
+  const missing = monthSpan().filter(ym => !have.has(ym)).length;
+  if (missing > 0) box.innerHTML += `<span class="badge num">${missing} ${missing === 1 ? 'month' : 'months'} missing</span>`;
 }
 
 // The six workbooks: the active region's first (primary), then All States, then the other four.
