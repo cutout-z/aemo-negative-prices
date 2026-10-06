@@ -26,7 +26,9 @@ The lane registry, cadence windows and report paths live in
 `git pull --ff-only` is impossible it resets onto the fetched remote instead
 of exiting 128.
 
-The lane's baseline is the committed `HEAD:outputs/summary.csv` (passed to
+Each run first restores `outputs/` to `HEAD` and removes stray files there,
+so a failed or manual run's leftovers are neither read nor published. The
+lane's baseline is the committed `HEAD:outputs/summary.csv` (passed to
 `src.main --baseline`), never the working tree. The pipeline refuses any
 change to a settled month (outside `--months-back`) versus that baseline.
 For a deliberate, audited rewrite, set `HISTORY_REWRITE_REASON="<reason>"`:

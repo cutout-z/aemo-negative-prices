@@ -11,10 +11,11 @@ SCRIPT = Path(__file__).resolve().parent.parent / "deploy" / "run-update.sh"
 COMMITTED = "REGIONID,YEAR_MONTH,count_below_0\nSA1,2026-06,10\n"
 DIRTY = "REGIONID,YEAR_MONTH,count_below_0\nSA1,2026-06,11\n"
 
-# Stands in for "python -m src.main ...": records its argv and the --baseline
-# file's content, then writes the summary given in $NEW_SUMMARY.
+# Stands in for "python -m src.main ...": records its argv, the summary it would
+# read as input and the --baseline file's content, then writes $NEW_SUMMARY.
 STUB = """#!/usr/bin/env bash
 printf '%s\\n' "$@" > "$STUB_LOG/args"
+cp outputs/summary.csv "$STUB_LOG/input"
 prev=""
 for a in "$@"; do
   if [[ "$prev" == "--baseline" ]]; then cp "$a" "$STUB_LOG/baseline"; fi
@@ -97,3 +98,18 @@ def test_commit_is_labelled_with_latest_data_month(lane):
     result = lane.run(new)
     assert result.returncode == 0, result.stderr
     assert _git(lane.app, "log", "-1", "--format=%s").strip() == "Update negative price analysis 2026-08"
+
+
+def test_run_starts_from_committed_outputs_not_leftovers(lane):
+    # A failed or manual run left the summary edited and a stray file in outputs/.
+    (lane.app / "outputs" / "summary.csv").write_text(DIRTY)
+    (lane.app / "outputs" / "stray.xlsx").write_text("left over")
+    new = COMMITTED + "SA1,2026-07,9\n"
+    result = lane.run(new)
+    assert result.returncode == 0, result.stderr
+    # The incremental run reads the committed summary, not the edited one ...
+    assert (lane.log / "input").read_text() == COMMITTED
+    # ... and only the pipeline's own outputs are published.
+    published = _git(lane.app, "show", "--name-only", "--format=", "HEAD").split()
+    assert published == ["outputs/summary.csv"]
+    assert not (lane.app / "outputs" / "stray.xlsx").exists()
