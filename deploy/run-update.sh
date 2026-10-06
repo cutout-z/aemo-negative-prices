@@ -19,6 +19,11 @@ if ! git pull --ff-only origin main; then
   echo "origin/main is not fast-forwardable (rewritten?) — resetting onto it."
   git reset --hard origin/main
 fi
+# Start from the COMMITTED outputs. A failed or manual run may have left
+# outputs/ edited or holding stray files; the incremental run would read the
+# edited summary as its input, and `git add outputs/` below would publish both.
+git checkout HEAD -- outputs/ 2>/dev/null || true
+git clean -fdq -- outputs/
 # Baseline = the COMMITTED summary, not the working tree (which a failed or
 # manual run may have left modified). Both the settled-history guard and the
 # "did anything change" check below compare against it.

@@ -30,6 +30,16 @@ THRESHOLD_HEADERS = [f"RRP < ${t}" if t == 0 else f"RRP < -${abs(t)}" for t in c
 # Column suffixes matching analyse.py output
 THRESHOLD_SUFFIXES = ["0", "neg10", "neg20", "neg30", "neg40", "neg50", "neg60", "neg70", "neg80"]
 
+# Percentage cells hold the percentage itself (25.3 means 25.3%, as in summary.csv);
+# the format only adds the unit to the display.
+PCT_FORMAT = '0.00"%"'
+
+# Heatmap colour scale, in percent of daylight intervals, shared by every
+# threshold column: 0% green, 10% yellow, 50% and above red. Fixed values (not
+# the min/median/max of each column) so a colour means the same share in every
+# column, region and month; 50% is where the dashboard's top heat step starts.
+HEAT_SCALE = ((0, "63BE7B"), (10, "FFEB84"), (50, "F8696B"))
+
 
 def generate_all_workbooks(summary: pd.DataFrame, output_dir: str):
     """Generate one .xlsx workbook per region from the summary DataFrame."""
@@ -123,7 +133,7 @@ def _write_pct_sheet(wb: Workbook, data: pd.DataFrame, region_name: str, sheet_t
         for col_idx, suffix in enumerate(THRESHOLD_SUFFIXES, 2):
             val = row[f"pct_below_{suffix}"]
             cell = ws.cell(row=row_idx, column=col_idx, value=val)
-            cell.number_format = "0.00"
+            cell.number_format = PCT_FORMAT
             cell.alignment = Alignment(horizontal="center")
             cell.border = THIN_BORDER
 
@@ -159,23 +169,22 @@ def _write_heatmap_sheet(wb: Workbook, data: pd.DataFrame, region_name: str):
         for col_idx, suffix in enumerate(THRESHOLD_SUFFIXES, 2):
             val = row[f"pct_below_{suffix}"]
             cell = ws.cell(row=row_idx, column=col_idx, value=val)
-            cell.number_format = "0.00"
+            cell.number_format = PCT_FORMAT
             cell.alignment = Alignment(horizontal="center")
             cell.border = THIN_BORDER
 
-    # Apply colour scale per column (green=low → yellow=mid → red=high)
+    # One colour scale over the whole block of percentages (see HEAT_SCALE)
     if num_rows > 0:
-        for col_idx in range(2, len(headers) + 1):
-            col_letter = get_column_letter(col_idx)
-            cell_range = f"{col_letter}2:{col_letter}{num_rows + 1}"
-            ws.conditional_formatting.add(
-                cell_range,
-                ColorScaleRule(
-                    start_type="min", start_color="63BE7B",  # green
-                    mid_type="percentile", mid_value=50, mid_color="FFEB84",  # yellow
-                    end_type="max", end_color="F8696B",  # red
-                ),
-            )
+        last_col = get_column_letter(len(headers))
+        (lo, lo_c), (mid, mid_c), (hi, hi_c) = HEAT_SCALE
+        ws.conditional_formatting.add(
+            f"B2:{last_col}{num_rows + 1}",
+            ColorScaleRule(
+                start_type="num", start_value=lo, start_color=lo_c,
+                mid_type="num", mid_value=mid, mid_color=mid_c,
+                end_type="num", end_value=hi, end_color=hi_c,
+            ),
+        )
 
     # Column widths
     ws.column_dimensions["A"].width = 14

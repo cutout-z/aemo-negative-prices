@@ -34,8 +34,9 @@ All data is sourced from **AEMO's public wholesale electricity market archive** 
 | **Field used** | `RRP` (Regional Reference Price, $/MWh) |
 | **Intervention handling** | During an AEMO intervention, `DISPATCHPRICE` carries two rows per interval. The pricing-run row (`INTERVENTION = 0`), which sets the market price, is kept; the intervention-run row (`INTERVENTION = 1`) is dropped. Intervals under intervention are still counted, once, at the market price |
 | **Regions** | NSW1, QLD1, VIC1, SA1, TAS1 (all five NEM mainland + Tasmania regions) |
-| **History** | May 2019 to present |
+| **History** | May 2019 to the latest month AEMO has published (see Publication lag) |
 | **Update frequency** | Daily monitor on the NAS runner; publishes when new/corrected monthly data changes `outputs/summary.csv` |
+| **Publication lag** | AEMO adds each month to the MMSDM archive after it ends: 10–28 days later for January 2025 – August 2026 (August 2026 appeared on 28 September). Until then the dashboard's latest month is the one before, so on 6 October 2026 it shows August 2026 |
 
 ---
 
@@ -84,8 +85,8 @@ A month with 31 days has 2,976 daylight intervals (31 × 96). A percentage of 50
 
 **Excel workbook sheets:**
 
-1. **Percentages** — clean table of percentage values, months as rows, thresholds as columns
-2. **Heatmap** — same data with conditional colour formatting (green → yellow → red) for visual pattern recognition
+1. **Percentages** — clean table of percentage values (shown as e.g. 25.30%; the cell holds 25.3, as in `summary.csv`), months as rows, thresholds as columns
+2. **Heatmap** — same data with one colour scale across every threshold column: 0% green, 10% yellow, 50% and above red. The scale is fixed, so a colour means the same share in every column and workbook
 3. **Audit** — raw interval counts and total daylight intervals for verification/QA
 
 ---
@@ -129,6 +130,8 @@ Production updates run on the **NAS runner** (QNAP `ai-wif-runner` container) vi
 4. Refuses to publish if any settled month (outside the overlap window) differs from the committed `outputs/summary.csv`, unless the run is an audited rewrite given `--allow-history-rewrite "<reason>"` (recorded in the commit message)
 5. Commits and pushes only when canonical `outputs/summary.csv` changes, as `aemo-nas-bot`
 6. Triggers the GitHub Pages redeploy
+
+The latest month therefore lags the calendar by the archive's publication delay (see Publication lag above). The lane deliberately does not fill the gap from AEMO's current-day reports: the monthly archive is the single source for every month, so a month is counted once, from one file, and is never swapped between sources.
 
 No manual intervention required. GitHub Actions is kept as a manual verification/fallback runner; a full historical refresh can still be triggered manually via the GitHub Actions UI if needed.
 

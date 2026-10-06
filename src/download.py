@@ -2,7 +2,7 @@
 
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -21,11 +21,11 @@ def get_latest_available_month() -> tuple[int, int] | None:
     """
     now = datetime.now()
 
-    # Try current month first, then work backwards up to 3 months
+    # Try the current month first, then step back one CALENDAR month at a time,
+    # up to 3 months. (Stepping 30 days skipped February from 1, 2 and 31 March.)
     for months_back in range(0, 4):
-        probe_date = now - timedelta(days=30 * months_back)
-        year = probe_date.year
-        month = probe_date.month
+        year, month = divmod(now.year * 12 + now.month - 1 - months_back, 12)
+        month += 1
 
         # AEMO directory structure: YYYY/MMYYYY/
         url = f"{config.NEMWEB_BASE_URL}{year:04d}/MMSDM_{year:04d}_{month:02d}/"
