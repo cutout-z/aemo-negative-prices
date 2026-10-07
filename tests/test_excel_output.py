@@ -72,3 +72,20 @@ def test_heatmap_is_one_fixed_scale_across_every_threshold_column(outdir):
     # Fixed percentages, not min/percentile/max of the data: a colour means the
     # same share of intervals in every column, every region and every month.
     assert [(v.type, float(v.val)) for v in cfvo] == [("num", 0.0), ("num", 10.0), ("num", 50.0)]
+
+
+# --- S4-2: a downloaded workbook did not say how fresh it was -----------------
+
+@pytest.mark.parametrize("book", [
+    "SA_negative_prices.xlsx", "NSW_negative_prices.xlsx", "All_States_negative_prices.xlsx",
+])
+def test_every_sheet_states_the_as_of_month_and_source(outdir, book):
+    wb = load_workbook(outdir / book)
+    for ws in wb.worksheets:
+        header = [c.value for c in ws[1]]
+        notes = [v for v in header if isinstance(v, str) and v.startswith("Data to ")]
+        assert notes == ["Data to Aug 2026; source: AEMO MMSDM DISPATCHPRICE via NEMOSIS"], ws.title
+        # One blank column between the table and the note; the table itself is unchanged.
+        i = header.index(notes[0])
+        assert header[i - 1] is None and header[0] == "Month"
+        assert ws.max_row == len(MONTHS) + 1
