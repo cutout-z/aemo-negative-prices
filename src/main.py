@@ -238,6 +238,7 @@ def run(
 
     # Step 4: Download and analyse each month
     new_results = []
+    failed_months = []
     for year, month in months_to_process:
         try:
             ym = f"{year}-{month:02d}"
@@ -249,11 +250,13 @@ def run(
             )
             if raw_df.empty:
                 logger.warning(f"No data for {year}-{month:02d}, skipping")
+                failed_months.append(ym)
                 continue
             stats = analyse_month(raw_df)
             new_results.append(stats)
         except Exception as e:
             logger.error(f"Failed to process {year}-{month:02d}: {e}")
+            failed_months.append(f"{year}-{month:02d}")
             continue
 
     # Step 5: Merge with existing summary
@@ -280,7 +283,25 @@ def run(
     save_summary(summary, output_dir)
     generate_all_workbooks(summary, output_dir)
 
+    # Step 7: AEMO said this month is published, so the run must have it. A
+    # month that failed to download or analyse would otherwise leave the
+    # summary unchanged and the run green. What did succeed is saved above;
+    # the non-zero exit stops the lane before it commits anything.
+    _assert_latest_month_present(summary, f"{latest_year}-{latest_month:02d}", failed_months)
+
     logger.info("Done.")
+
+
+def _assert_latest_month_present(summary: pd.DataFrame, latest: str, failed_months: list[str]):
+    """Exit 2 when the probed latest published month is not in the summary."""
+    if latest in set(summary["YEAR_MONTH"]):
+        return
+    logger.error(
+        "AEMO has published %s but the summary does not include it "
+        "(months that failed this run: %s). Failing the run.",
+        latest, ", ".join(failed_months) or "none",
+    )
+    sys.exit(2)
 
 
 def main():
