@@ -40,11 +40,14 @@ PCT_FORMAT = '0.00"%"'
 # column, region and month; 50% is where the dashboard's top heat step starts.
 HEAT_SCALE = ((0, "63BE7B"), (10, "FFEB84"), (50, "F8696B"))
 
+SOURCE_NOTE = "source: AEMO MMSDM DISPATCHPRICE via NEMOSIS"
+
 
 def generate_all_workbooks(summary: pd.DataFrame, output_dir: str):
     """Generate one .xlsx workbook per region from the summary DataFrame."""
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
+    as_of = _as_of_note(summary)
 
     for region in config.REGIONS:
         region_data = summary[summary["REGIONID"] == region].copy()
@@ -56,7 +59,7 @@ def generate_all_workbooks(summary: pd.DataFrame, output_dir: str):
         friendly_name = config.REGION_NAMES[region]
         filepath = output_path / f"{friendly_name}_negative_prices.xlsx"
 
-        _write_region_workbook(region_data, friendly_name, filepath)
+        _write_region_workbook(region_data, friendly_name, filepath, as_of)
         logger.info(f"Written {filepath}")
 
     generate_all_states_workbook(summary, output_dir)
@@ -81,11 +84,12 @@ def generate_all_states_workbook(summary: pd.DataFrame, output_dir: str):
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
 
+    _stamp_as_of(wb, _as_of_note(summary))
     wb.save(filepath)
     logger.info(f"Written {filepath}")
 
 
-def _write_region_workbook(data: pd.DataFrame, region_name: str, filepath: Path):
+def _write_region_workbook(data: pd.DataFrame, region_name: str, filepath: Path, as_of: str):
     """Write a 3-sheet workbook for a single region."""
     wb = Workbook()
 
@@ -102,7 +106,21 @@ def _write_region_workbook(data: pd.DataFrame, region_name: str, filepath: Path)
     if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
 
+    _stamp_as_of(wb, as_of)
     wb.save(filepath)
+
+
+def _as_of_note(summary: pd.DataFrame) -> str:
+    """'Data to Aug 2026; source: ...' from the latest month in the whole summary."""
+    return f"Data to {_format_month_label(summary['YEAR_MONTH'].max())}; {SOURCE_NOTE}"
+
+
+def _stamp_as_of(wb: Workbook, note: str):
+    """Write the as-of note in row 1 of every sheet, one blank column right of the
+    table, so a downloaded workbook says how fresh it is without moving any data."""
+    for ws in wb.worksheets:
+        cell = ws.cell(row=1, column=ws.max_column + 2, value=note)
+        cell.font = Font(italic=True, size=10, color="595959")
 
 
 def _format_month_label(year_month: str) -> str:

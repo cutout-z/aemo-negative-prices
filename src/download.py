@@ -1,9 +1,11 @@
 """Data acquisition from AEMO via NEMOSIS."""
 
 import logging
+import re
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pandas as pd
 import requests
@@ -14,8 +16,32 @@ from . import config
 logger = logging.getLogger(__name__)
 
 
+# AEMO answers a missing month directory with a 404, or by redirecting to its
+# /404 page, which Cloudflare may itself serve as a 403 (or as a 200 "soft 404").
+_NOT_FOUND_PAGE = re.compile(r"/404(\.[a-z]+)?/?$", re.IGNORECASE)
+
+
+def _not_published(resp) -> bool:
+    """True only when nemweb says the month does not exist: a 404, or a redirect to /404.
+
+    A redirect counts whatever the /404 page itself answers (403, 200, ...). Every
+    hop is checked, so a /404 page that redirects again is still recognised.
+    """
+    if resp.status_code == 404:
+        return True
+    return bool(resp.history) and any(
+        _NOT_FOUND_PAGE.search(urlparse(hop.url).path) for hop in [*resp.history, resp]
+    )
+
+
 def get_latest_available_month() -> tuple[int, int] | None:
     """Probe AEMO directory listing to find the newest published month.
+
+    Only a "not found" answer (404, or a redirect to AEMO's /404 page) means a
+    month is not published, and the probe then steps back one month. Any other
+    answer (a 403 or 5xx on the month itself, a timeout) is retried and, if it
+    persists, fails the probe: returns None, so the run exits non-zero rather
+    than quietly settling on an older month.
 
     Returns (year, month) or None if probing fails.
     """
@@ -27,25 +53,32 @@ def get_latest_available_month() -> tuple[int, int] | None:
         year, month = divmod(now.year * 12 + now.month - 1 - months_back, 12)
         month += 1
 
-        # AEMO directory structure: YYYY/MMYYYY/
+        # AEMO directory structure: YYYY/MMSDM_YYYY_MM/
         url = f"{config.NEMWEB_BASE_URL}{year:04d}/MMSDM_{year:04d}_{month:02d}/"
 
         for attempt in range(config.MAX_RETRIES):
+            last = attempt == config.MAX_RETRIES - 1
             try:
                 resp = requests.head(url, timeout=15, allow_redirects=True)
-                if resp.status_code == 200:
-                    logger.info(f"Latest available month: {year}-{month:02d}")
-                    return (year, month)
-                elif resp.status_code == 404:
-                    break  # This month doesn't exist, try earlier
-                else:
-                    logger.warning(f"Unexpected status {resp.status_code} for {url}")
-                    break
             except requests.RequestException as e:
-                if attempt < config.MAX_RETRIES - 1:
-                    time.sleep(config.RETRY_BACKOFF * (attempt + 1))
-                else:
-                    logger.error(f"Failed to probe {url}: {e}")
+                if last:
+                    logger.error(f"Failed to probe {url}: {e}; not stepping back to an older month")
+                    return None
+                time.sleep(config.RETRY_BACKOFF * (attempt + 1))
+                continue
+            if _not_published(resp):
+                break  # This month doesn't exist, try earlier
+            if resp.status_code == 200:
+                logger.info(f"Latest available month: {year}-{month:02d}")
+                return (year, month)
+            if last:
+                logger.error(
+                    f"Unexpected status {resp.status_code} for {url} (final URL {resp.url}); "
+                    "not stepping back to an older month"
+                )
+                return None
+            logger.warning(f"Unexpected status {resp.status_code} for {url}, retrying")
+            time.sleep(config.RETRY_BACKOFF * (attempt + 1))
 
     logger.error("Could not determine latest available month from AEMO")
     return None

@@ -171,3 +171,43 @@ def test_output_and_cache_dirs(repo, tmp_path, monkeypatch):
     assert set(seen) == {str(cache)} and cache.is_dir()
     assert pd.read_csv(out / "summary.csv").YEAR_MONTH.max() == "2019-09"
     assert repo.summary.read_text() == repo.committed()  # repo outputs untouched
+
+
+# --- S2-2: a published month that failed to download or analyse left the
+# summary unchanged and the run exited 0 (green) -------------------------------
+
+@pytest.mark.parametrize("failure", ["raises", "empty"])
+def test_published_latest_month_missing_fails_the_run(repo, monkeypatch, caplog, failure):
+    real = M.download_month
+
+    def latest_fails(y, m, cache, force=False):
+        if (y, m) == (2019, 9):
+            if failure == "raises":
+                raise RuntimeError("Failed to download 2019-09 after 3 attempts")
+            return real(y, m, cache).iloc[0:0]
+        return real(y, m, cache)
+
+    monkeypatch.setattr(M, "download_month", latest_fails)
+    repo.set_latest(2019, 9)
+    with caplog.at_level(logging.ERROR), pytest.raises(SystemExit) as exc:
+        M.run(months_back=2)
+    assert exc.value.code == 2
+    assert "AEMO has published 2019-09 but the summary does not include it" in caplog.text
+    assert "failed this run: 2019-09" in caplog.text
+    # What did succeed is still saved; the lane stops before committing it.
+    assert pd.read_csv(repo.summary).YEAR_MONTH.max() == "2019-08"
+
+
+def test_older_mutable_month_failing_keeps_its_row_and_passes(repo, monkeypatch):
+    # 2019-08 is re-downloaded (mutable window) and fails: its committed row is
+    # kept and the latest month is present, so the run is not failed for it.
+    real = M.download_month
+
+    def mutable_fails(y, m, cache, force=False):
+        if (y, m) == (2019, 8):
+            raise RuntimeError("transient")
+        return real(y, m, cache)
+
+    monkeypatch.setattr(M, "download_month", mutable_fails)
+    M.run(months_back=2)
+    assert repo.summary.read_text() == repo.committed()

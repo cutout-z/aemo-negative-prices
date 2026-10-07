@@ -117,6 +117,46 @@ def test_latest_month_in_the_future():
     _fails_with(df, "Latest month 2020-04 is not a complete past month")
 
 
+# --- S3-1: the validator had no lower bound, so a summary months behind AEMO passed ---
+
+def _months_to(last: str) -> list[str]:
+    return [str(p) for p in pd.period_range("2019-05", last, freq="M")]
+
+
+def test_stale_summary_fails():
+    # On 2020-04-15 February (ended 46 days ago) must be there; January is the latest.
+    errors = v.validate_summary(_summary(_months_to("2020-01")), today=TODAY)
+    assert any("Latest month 2020-01 is stale: 2020-02 ended 46 days ago" in e for e in errors), errors
+
+
+@pytest.mark.parametrize("today, ok", [
+    (date(2020, 5, 5), True),    # March ended 35 days ago: not yet required
+    (date(2020, 5, 6), False),   # 36 days: required, and missing
+])
+def test_freshness_boundary(today, ok):
+    errors = v.validate_summary(_summary(_months_to("2020-02")), today=today)
+    assert (not any("is stale" in e for e in errors)) is ok, errors
+
+
+@pytest.mark.parametrize("last, today", [
+    ("2026-07", date(2026, 9, 27)),   # the day before AEMO's latest landing (Aug 2026 archive, 28 Sep)
+    ("2026-07", date(2026, 10, 5)),   # Aug ended 35 days ago: still inside the tolerance
+    ("2026-08", date(2026, 10, 7)),   # today's committed state
+    ("2026-08", date(2026, 11, 1)),   # monthly lane run, Sep archive not yet landed
+    ("2026-08", date(2026, 11, 4)),   # Sep ended 35 days ago
+])
+def test_normal_aemo_lag_does_not_fail(last, today):
+    assert v.validate_summary(_summary(_months_to(last)), today=today) == []
+
+
+def test_tolerance_is_the_one_named_constant(monkeypatch):
+    # Summary to 2020-02; March ended 15 days before TODAY: fine at 35 days, stale at 14.
+    df = _summary(_months_to("2020-02"))
+    assert _errors(df) == []
+    monkeypatch.setattr(v, "MAX_PUBLICATION_LAG_DAYS", 14)
+    _fails_with(df, "Latest month 2020-02 is stale: 2020-03 ended 15 days ago")
+
+
 def test_missing_region():
     df = _summary()
     _fails_with(df[df.REGIONID != "TAS1"], "Region TAS1 missing")
