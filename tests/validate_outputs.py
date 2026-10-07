@@ -9,12 +9,15 @@ Every check is exact: a region-month must have exactly days x 96 daylight
 intervals, every percentage must equal round(count / total * 100, 2) (the
 pipeline's formula), and the months must form one gap-free run from May 2019
 to the latest complete month, identical for all five regions.
+
+Freshness: every month that ended more than MAX_PUBLICATION_LAG_DAYS ago must
+be present, so a summary AEMO has moved past fails instead of passing quietly.
 """
 
 import argparse
 import calendar
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -25,6 +28,22 @@ THRESHOLDS = ["0", "neg10", "neg20", "neg30", "neg40", "neg50", "neg60", "neg70"
 REGION_NAMES = {"NSW1": "NSW", "QLD1": "QLD", "VIC1": "VIC", "SA1": "SA", "TAS1": "TAS"}
 START_MONTH = "2019-05"
 INTERVALS_PER_DAY = 96  # 08:00-16:00 interval starts, 12 five-minute intervals an hour
+
+# Freshness tolerance, in days after a month's last day, by which that month must
+# be in summary.csv. AEMO's monthly MMSDM archive landed 12-16 days after month
+# end in 2026, 28 days at worst (Aug 2026, landed 28 Sep); 35 leaves a week over
+# that worst case. index.html uses the same number for its overdue notice
+# (tests/test_page.py keeps the two equal). Change it here and there together.
+MAX_PUBLICATION_LAG_DAYS = 35
+
+
+def latest_required_month(today: date) -> pd.Period:
+    """The newest month that must be in the summary on ``today``.
+
+    A month is required once more than MAX_PUBLICATION_LAG_DAYS days have passed
+    since its last day: with 35, August (ends the 31st) is required from 6 Oct.
+    """
+    return pd.Period(today - timedelta(days=MAX_PUBLICATION_LAG_DAYS), freq="M") - 1
 
 
 def _sample(frame: pd.DataFrame, limit: int = 5) -> str:
@@ -127,6 +146,16 @@ def validate_summary(df: pd.DataFrame, today: date | None = None) -> list[str]:
     latest = months.max()
     current = pd.Period(today, freq="M")
     check(latest < current, f"Latest month {latest} is not a complete past month (today {today})")
+
+    # --- Fresh: every month that ended more than MAX_PUBLICATION_LAG_DAYS ago is present ---
+    required = latest_required_month(today)
+    overdue_by = (today - required.end_time.date()).days
+    check(
+        latest >= required,
+        f"Latest month {latest} is stale: {required} ended {overdue_by} days ago "
+        f"(more than MAX_PUBLICATION_LAG_DAYS = {MAX_PUBLICATION_LAG_DAYS}) and is not in "
+        f"summary.csv (today {today})",
+    )
 
     return errors
 
