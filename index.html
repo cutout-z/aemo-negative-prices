@@ -123,6 +123,7 @@ const TH_LABELS = ['< $0','< −$10','< −$20','< −$30','< −$40','< −$50'
 const EXCEL_FILES = {NSW1:'NSW_negative_prices.xlsx',QLD1:'QLD_negative_prices.xlsx',VIC1:'VIC_negative_prices.xlsx',SA1:'SA_negative_prices.xlsx',TAS1:'TAS_negative_prices.xlsx'};
 
 let allData = [];
+let overdue = null;   // {month, days} when the month after the latest is overdue; see overdueMonth()
 let activeRegion = 'SA1';
 
 function formatMonth(ym) {
@@ -284,6 +285,19 @@ function monthSpan() {
 }
 const GAP_NOTE = `No row for this month in ${CSV_PATH}`;
 
+// A month that ended more than this many days ago should be in the data: AEMO's monthly archive
+// landed 12–16 days after month end in 2026, 28 at worst. Keep equal to MAX_PUBLICATION_LAG_DAYS
+// in tests/validate_outputs.py (tests/test_page.py checks), which fails the update on the same day.
+const MAX_PUBLICATION_LAG_DAYS = 35;
+// The month after the latest in the data, if it ended more than MAX_PUBLICATION_LAG_DAYS days ago
+// (by the viewer's calendar date): {month, days since its last day}. Otherwise null.
+function overdueMonth(latest, today = new Date()) {
+  const next = nextMonth(latest);
+  const [y, m] = next.split('-').map(Number);
+  const days = Math.round((Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) - Date.UTC(y, m, 0)) / 86400000);
+  return days > MAX_PUBLICATION_LAG_DAYS ? { month: next, days } : null;
+}
+
 function renderTable() {
   const thead = document.getElementById('thead');
   const tbody = document.getElementById('tbody');
@@ -335,6 +349,7 @@ function renderBadges(rows) {
   const have = new Set(rows.map(r => r.YEAR_MONTH));
   const missing = monthSpan().filter(ym => !have.has(ym)).length;
   if (missing > 0) box.innerHTML += `<span class="badge num">${missing} ${missing === 1 ? 'month' : 'months'} missing</span>`;
+  if (overdue) box.innerHTML += `<span class="pill pill-warn num"><span class="badge-dot"></span>${formatMonth(overdue.month)} overdue</span>`;
 }
 
 // The six workbooks: the active region's first (primary), then All States, then the other four.
@@ -395,6 +410,11 @@ Papa.parse('outputs/summary.csv', {
       '<span>Source: AEMO DISPATCHPRICE (RRP from the pricing run; intervention-run rows excluded) via NEMOSIS</span>' + dot +
       `<span class="text-muted">as of ${formatMonth(latest)}</span>` + dot +
       `<span>${formatMonth(nextMonth(latest))} appears when AEMO publishes its monthly archive, usually 2–4 weeks after the month ends; checked daily</span>`;
+    overdue = overdueMonth(latest);
+    if (overdue) {
+      document.getElementById('footer').innerHTML += dot +
+        `<span class="font-medium" style="color: var(--warn)" role="status">${formatMonth(overdue.month)} is overdue: it ended ${overdue.days} days ago and AEMO normally publishes within 4 weeks, but the update has not picked it up</span>`;
+    }
     renderKpis();
     renderTable();
   },
