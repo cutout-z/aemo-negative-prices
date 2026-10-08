@@ -125,7 +125,7 @@ Location: `agent-contracts/facts/AEMO-FACTS.md` (git, `cutout-z/agent-contracts`
 | Data lane | NAS (QNAP `ai-wif-runner`), `nas-job aemo-negative-prices` → `deploy/run-update.sh`, `PIPELINE_ARGS=--months-back 2`; commits as `aemo-nas-bot` and pushes `main` only when `summary.csv` changes (`deploy/README.md`, `deploy/env.example`) |
 | Lane behaviour | `git reset --hard origin/main` if `main` is not fast-forwardable; restores and cleans `outputs/` before each run (`deploy/run-update.sh`) |
 | Fallback | `.github/workflows/monthly-update.yml`, manual dispatch only; commits `outputs/` as `github-actions[bot]` |
-| Lane cadence | **conflict, unverified**: README and `deploy/README.md` say daily; private ops notes list cron `42 8 1 * *` (monthly). Bot commits since 2026-07 land on the 1st |
+| Lane cadence | Daily at 08:42 AWST (NAS crontab `42 8 * * *`, checked 2026-10-08), matching README and `deploy/README.md`. Daily since 2026-10-07; before that, monthly on the 1st (hence bot commits on the 1st until October) |
 | Latest data | 440 rows = 5 regions × 88 months, 2019-05 → 2026-08 (`outputs/summary.csv`, 2026-10-08) |
 
 ## Data contracts (the owner's yes to change)
@@ -184,7 +184,7 @@ or `brain-ops-nas workflow aemo-negative-prices` from a pass: they download from
 ## Working alongside other agents
 
 - The NAS lane pushes to `main` on its own and hard-resets its checkout; a hand commit there is lost.
-- Hermes owns the lane (its private project note's "latest: Feb 2026" and "monthly" lines are stale). Do not edit the lane registry
+- Hermes owns the lane. Do not edit the lane registry
   (`tools/nas-runner/configs/brain-ops.nas.toml`, NAS runner tooling) from here.
 - Design: `index.html`, `assets/css/**`. Logic: `src/**`, `tests/**`, `deploy/**`, `.github/**`.
   If a pass needs a data file that does not exist, stop and say so; never synthesise one.
