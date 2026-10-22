@@ -200,7 +200,7 @@ def run(
         sys.exit(1)
 
     latest_year, latest_month = latest
-    today = datetime.now().date()
+    today = config.nem_now().date()
     if (latest_year, latest_month) == (today.year, today.month):
         if today.month == 1:
             latest_year, latest_month = today.year - 1, 12
@@ -225,6 +225,7 @@ def run(
             if f"{y}-{m:02d}" not in existing_months or f"{y}-{m:02d}" in force_months
         ]
 
+    # Reachable only with --months-back 0: otherwise the mutable window is always processed.
     if not months_to_process:
         logger.info("Already up to date — no new months to process.")
         # Still regenerate Excel in case format changed

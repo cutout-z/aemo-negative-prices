@@ -27,13 +27,8 @@ def _probe(monkeypatch, today: datetime, published: tuple[int, int]):
         probed.append((y, m))
         return _Resp(200 if (y, m) <= published else 404, url)
 
-    class _Today(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return today
-
     monkeypatch.setattr(download.requests, "head", head)
-    monkeypatch.setattr(download, "datetime", _Today)
+    monkeypatch.setattr(download.config, "nem_now", lambda: today)
     return download.get_latest_available_month(), probed
 
 
@@ -90,13 +85,8 @@ def _probe_with(monkeypatch, today: datetime, answer):
         probed.append((y, m))
         return answer(y, m, url)
 
-    class _Today(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return today
-
     monkeypatch.setattr(download.requests, "head", head)
-    monkeypatch.setattr(download, "datetime", _Today)
+    monkeypatch.setattr(download.config, "nem_now", lambda: today)
     monkeypatch.setattr(download.time, "sleep", lambda s: None)
     return download.get_latest_available_month(), probed
 
@@ -172,3 +162,10 @@ def test_redirect_elsewhere_with_403_fails_the_probe(monkeypatch):
 def test_not_published_recognises_only_the_404_page(url, expected):
     assert download._not_published(_Resp(403, url, history=[_Resp(302, "https://x/MMSDM_2026_11/")])) is expected
     assert download._not_published(_Resp(403, url)) is False  # no redirect: a plain 403
+
+
+def test_nem_now_is_utc_plus_ten_regardless_of_the_host_clock():
+    from datetime import datetime as dt, timezone
+    before = dt.now(timezone.utc).replace(tzinfo=None)
+    got = download.config.nem_now()
+    assert abs((got - before).total_seconds() - 10 * 3600) < 5

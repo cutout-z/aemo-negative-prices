@@ -45,7 +45,7 @@ def get_latest_available_month() -> tuple[int, int] | None:
 
     Returns (year, month) or None if probing fails.
     """
-    now = datetime.now()
+    now = config.nem_now()
 
     # Try the current month first, then step back one CALENDAR month at a time,
     # up to 3 months. (Stepping 30 days skipped February from 1, 2 and 31 March.)
