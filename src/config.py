@@ -1,6 +1,6 @@
 """Configuration for AEMO negative price analysis."""
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 # NEM regions
 REGIONS = ["NSW1", "QLD1", "VIC1", "SA1", "TAS1"]
@@ -42,6 +42,15 @@ DAYLIGHT_HOURS = DAYLIGHT_END_HOUR - DAYLIGHT_START_HOUR
 INTERVALS_PER_DAY = DAYLIGHT_HOURS * INTERVALS_PER_HOUR  # 96
 
 # AEMO data settings
+# NEM time is UTC+10 all year (no daylight saving).
+NEM_UTC_OFFSET = timedelta(hours=10)
+
+
+def nem_now() -> datetime:
+    """Current wall-clock time in NEM time (naive datetime), not the host's clock."""
+    return (datetime.now(timezone.utc) + NEM_UTC_OFFSET).replace(tzinfo=None)
+
+
 NEMWEB_BASE_URL = "https://nemweb.com.au/Data_Archive/Wholesale_Electricity/MMSDM/"
 NEMOSIS_TABLE = "DISPATCHPRICE"
 
