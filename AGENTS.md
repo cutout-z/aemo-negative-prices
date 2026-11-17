@@ -238,8 +238,8 @@ cd <worktree> && python3 -m pytest -q -p no:cacheprovider   # synthetic, no netw
 cd <worktree> && python3 tests/validate_outputs.py           # the data gate, exit 0
 ```
 
-**Baseline (2026-10-08, `1abdd27`, fresh worktree): `126 passed`, 0 failed; `validate_outputs.py`
-exit 0 ("All validations passed", 440 rows).** No test needs gitignored data. `-p no:cacheprovider`
+**Baseline (2026-11-17, `16ffe96`, fresh worktree): `138 passed`, 0 failed, 0 skipped; `validate_outputs.py`
+exit 0 ("All validations passed", 450 rows).** No test needs gitignored data. `-p no:cacheprovider`
 keeps `.pytest_cache/` (not gitignored) out of the tree.
 
 Local preview, port **9360** (the port the 2026-10 design pass used; `design/2026-10:AGENTS.md`).
