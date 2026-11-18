@@ -9,7 +9,7 @@ import atexit
 import shutil
 import tempfile
 
-from hypothesis import HealthCheck, settings
+from hypothesis import HealthCheck, Phase, settings
 from hypothesis.configuration import set_hypothesis_home_dir
 
 # Keep any Hypothesis scratch state out of the worktree (no `.hypothesis/` directory), and remove it at exit.
@@ -24,6 +24,9 @@ settings.register_profile(
     deadline=None,
     database=None,
     print_blob=True,
+    # No shrinking: with 50+ row examples a real failure otherwise shrinks for minutes at 5-12 GB RSS. The
+    # failing example is still printed (derandomize + print_blob) and reproducible.
+    phases=(Phase.explicit, Phase.reuse, Phase.generate),
     suppress_health_check=[HealthCheck.too_slow],
 )
 settings.load_profile("gate")

@@ -22,12 +22,15 @@ from src import config  # noqa: E402
 from src.analyse import _threshold_suffix, calculate_monthly_stats  # noqa: E402
 
 REGIONS = ["NSW1", "QLD1", "SA1"]
-# 5-minute end stamps across a month boundary (the month is of the interval START)
-STAMPS = pd.date_range("2025-01-30 08:05", periods=288 * 5, freq="5min")
-# the interval stamped 00:00 on 1 Feb ran 23:55-00:00 on 31 Jan: it belongs to January
-BOUNDARY = STAMPS.get_loc(pd.Timestamp("2025-02-01 00:00"))
+# 5-minute end stamps across two month boundaries, in two different years (Jan-Feb 2025 and Dec 2025-Jan 2026),
+# so a month key without the year would merge the two Januaries. The month is of the interval START.
+STAMPS = pd.date_range("2025-01-30 08:05", periods=288 * 5, freq="5min").append(
+    pd.date_range("2025-12-30 08:05", periods=288 * 5, freq="5min"))
+# the interval stamped 00:00 on the 1st ran 23:55-00:00 on the previous day: it belongs to the previous month
+BOUNDARIES = [STAMPS.get_loc(pd.Timestamp(t)) for t in ("2025-02-01 00:00", "2026-01-01 00:00")]
 
-stamp_idx = st.one_of(st.sampled_from([BOUNDARY - 1, BOUNDARY, BOUNDARY + 1]), st.integers(0, len(STAMPS) - 1))
+stamp_idx = st.one_of(
+    st.sampled_from([b + d for b in BOUNDARIES for d in (-1, 0, 1)]), st.integers(0, len(STAMPS) - 1))
 # RRP is published to 5 decimals: draw integer units of 1e-5 $/MWh, hitting the cent-rounding edges
 # (+-499/500/501 units either side of a whole cent) at and next to every threshold.
 near_threshold = st.sampled_from([
